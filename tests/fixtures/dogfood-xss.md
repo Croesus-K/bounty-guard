@@ -2,7 +2,7 @@
 
 ## 来源信息
 
-- **旧仓库路径**：`C:\Users\sunset\Desktop\Dark Bounty Killer Mission Contract Management System`
+- **旧仓库路径**：作者本机的「赏金契约」项目目录（路径已脱敏；扫描过程仅执行只读 git 命令）
 - **仓库状态**：完整 git 历史（非浅克隆，`rev-parse --is-shallow-repository` = false），仅执行只读命令（git log / show / diff / rev-parse），未做任何修改
 - **漏洞文件相对路径**：`index.html`（由提交 `2b264af` 从 `Dark Bounty Killer Mission Contract Management System.html` 重命名而来）
 - **漏洞形态**：存储型 XSS —— `renderTasks()` 中用模板字符串把用户输入（`task.name` / `task.type` / `task.reward` / `task.description` / `task.id` 等）**未经转义**直接拼进 `taskItem.innerHTML`
