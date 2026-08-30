@@ -81,15 +81,23 @@ GitHub Action（薄壳）──┘
 - E2E：dogfood diff --ai 全链路（mock）跑通；无 Key 降级提示正常
 - 「测试仓库 PR 全流程」依赖 Week 3 的 Action 基建，归入下周验收
 
-## Week 3：GitHub Action 与 PR 评论
+## Week 3：GitHub Action 与 PR 评论 ✅
 
-- [ ] 单条粘性评论（更新而非刷屏）
-- [ ] `::error file,line` 标注 + Job Summary
-- [ ] `--fail-on` 门禁接入 CI
-- [ ] `action.yml` 薄壳封装 CLI；GITHUB_TOKEN 走 secrets
-- [ ] 靶场仓库 + 含 3 个安全问题的演示 PR
+- [x] 单条粘性评论（更新而非刷屏）
+- [x] `::error file,line` 标注 + Job Summary
+- [x] `--fail-on` 门禁接入 CI
+- [x] `action.yml` 薄壳封装 CLI；GITHUB_TOKEN 走 secrets
+- [x] 靶场仓库 + 含 3 个安全问题的演示 PR
 
-验收：Action 评论精准命中；README 录制 demo GIF。
+### Week 3 验收记录（2026-08-31）
+
+- 靶场：[Croesus-K/bounty-guard-playground](https://github.com/Croesus-K/bounty-guard-playground)，
+  [PR #1](https://github.com/Croesus-K/bounty-guard-playground/pull/1) 故意引入 3 个问题
+- **Action 精准命中 3/3**：`tasks.js:4` XSS（高危）、`:9` MD5 存密码（高危）、`:13` 明文 http（低危），
+  行号与中文修复建议齐全；`--fail-on high` 使 Job 红灯（conclusion: failure）；
+  粘性评论由 github-actions[bot] 发布，重复扫描只更新本条
+- 调试记录：action 参数内嵌引号经 word-splitting 原样传入导致首轮失败，修复后重扫通过
+- demo GIF 录制待补（README 已预留位置）
 
 ## Week 4：发布与叙事
 
