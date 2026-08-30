@@ -6,7 +6,9 @@ import type { LLMProvider, LLMReviewRequest, LLMReviewResult, Severity } from '.
  * 设计约束：
  * - 只复核、不发明——输入永远是规则已命中的告警；
  * - 严重度只接受下调（解析层直接丢弃上调建议，流水线再做双保险）；
- * - 单条复核失败不抛异常，返回 unsure 保留规则原判（优雅降级）。
+ * - 单条复核失败不抛异常，返回 unsure 保留规则原判（优雅降级）；
+ * - 兼容性：供应商不支持 response_format 时自动去掉该参数重试；
+ *   HTTP 429/5xx 按指数退避（尊重 Retry-After），与解析失败分开处理。
  */
 
 export interface OpenAIProviderOptions {
@@ -18,14 +20,21 @@ export interface OpenAIProviderOptions {
   fetchImpl?: typeof fetch;
   /** 单次请求超时（毫秒），默认 30 秒 */
   timeoutMs?: number;
-  /** JSON 解析 / 网络失败的重试次数，默认 1 */
+  /** JSON 解析 / HTTP 失败的重试次数，默认 1 */
   retries?: number;
+  /** 重试的基础退避时长（毫秒），默认 1000；HTTP 429/5xx 按尝试次数递增 */
+  retryBaseDelayMs?: number;
+  /** 限制单条复核的输出长度（tokens），默认 500——控制复核成本 */
+  maxTokens?: number;
 }
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RETRIES = 1;
+const DEFAULT_RETRY_BASE_DELAY_MS = 1_000;
+const DEFAULT_MAX_TOKENS = 500;
+const MAX_RETRY_DELAY_MS = 10_000;
 
 const VERDICTS = ['confirmed', 'false-positive', 'unsure'];
 const SEVERITIES: Severity[] = ['high', 'medium', 'low', 'info'];
@@ -53,6 +62,19 @@ interface ChatCompletionResponse {
 
 type ChatMessage = { role: 'system' | 'user'; content: string };
 
+/** HTTP 层错误：携带状态码与 Retry-After，供重试策略决策 */
+export class LLMHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly retryAfterMs: number | undefined,
+    detail: string
+  ) {
+    super(`HTTP ${status}${detail ? `：${detail}` : ''}`);
+  }
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
 export class OpenAICompatibleProvider implements LLMProvider {
   readonly name: string;
   private readonly apiKey: string;
@@ -61,6 +83,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
   private readonly retries: number;
+  private readonly retryBaseDelayMs: number;
+  private readonly maxTokens: number;
 
   constructor(options: OpenAIProviderOptions) {
     this.apiKey = options.apiKey;
@@ -69,20 +93,36 @@ export class OpenAICompatibleProvider implements LLMProvider {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retries = options.retries ?? DEFAULT_RETRIES;
+    this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
+    this.maxTokens = options.maxTokens ?? DEFAULT_MAX_TOKENS;
     this.name = `openai-compatible:${this.model}`;
   }
 
   async review(request: LLMReviewRequest): Promise<LLMReviewResult> {
     const messages = this.buildMessages(request);
     let lastError = '未知错误';
+    let lastDelayMs = 0;
+    let jsonMode = true;
     for (let attempt = 0; attempt <= this.retries; attempt++) {
+      if (attempt > 0 && lastDelayMs > 0) await sleep(lastDelayMs);
       try {
-        const content = await this.chat(messages, attempt > 0);
+        const content = await this.chat(messages, { jsonMode, retryNote: attempt > 0 });
         const parsed = this.parseReview(content, request.severity);
         if (parsed) return parsed;
         lastError = '输出无法解析为合法 JSON';
+        lastDelayMs = 0; // 解析类失败立即重试，无需退避
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
+        if (err instanceof LLMHttpError) {
+          // 供应商不支持 response_format（多见于 400）：关闭 JSON 模式再试
+          if (err.status === 400 && jsonMode) jsonMode = false;
+          lastDelayMs = Math.min(
+            err.retryAfterMs ?? this.retryBaseDelayMs * (attempt + 1),
+            MAX_RETRY_DELAY_MS
+          );
+        } else {
+          lastDelayMs = Math.min(this.retryBaseDelayMs * (attempt + 1), MAX_RETRY_DELAY_MS);
+        }
       }
     }
     return { verdict: 'unsure', explanation: `LLM 复核失败（${lastError}），保留规则原判` };
@@ -108,11 +148,12 @@ export class OpenAICompatibleProvider implements LLMProvider {
     ];
   }
 
-  private async chat(messages: ChatMessage[], withRetryNote: boolean): Promise<string> {
+  private async chat(
+    messages: ChatMessage[],
+    opts: { jsonMode: boolean; retryNote: boolean }
+  ): Promise<string> {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    // 竞速兜底：不能假设注入的 fetch 一定遵守 abort signal，
-    // 超时必须让调用方确定性地收敛（重试或 unsure）
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         controller.abort();
@@ -120,25 +161,40 @@ export class OpenAICompatibleProvider implements LLMProvider {
       }, this.timeoutMs);
     });
     try {
+      const body: Record<string, unknown> = {
+        model: this.model,
+        messages: opts.retryNote
+          ? [...messages, { role: 'user', content: '你上一次的输出无法解析，请严格只输出一个 JSON 对象。' }]
+          : messages,
+        temperature: 0,
+        max_tokens: this.maxTokens
+      };
+      if (opts.jsonMode) body.response_format = { type: 'json_object' };
       const pending = this.fetchImpl(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify({
-          model: this.model,
-          messages: withRetryNote
-            ? [...messages, { role: 'user', content: '你上一次的输出无法解析，请严格只输出一个 JSON 对象。' }]
-            : messages,
-          temperature: 0,
-          response_format: { type: 'json_object' }
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal
       });
       pending.catch(() => {}); // 防 timeout 赢得竞速后出现未处理拒绝
       const response = (await Promise.race([pending, timeout])) as Response;
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        let detail = '';
+        try {
+          detail = (await response.text()).slice(0, 200);
+        } catch {
+          detail = '';
+        }
+        const retryAfter = Number(response.headers?.get?.('retry-after'));
+        throw new LLMHttpError(
+          response.status,
+          Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : undefined,
+          detail
+        );
+      }
       const data = (await Promise.race([response.json(), timeout])) as ChatCompletionResponse;
       return data.choices?.[0]?.message?.content ?? '';
     } finally {

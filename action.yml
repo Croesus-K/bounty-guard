@@ -41,9 +41,9 @@ runs:
 
     - name: 扫描 PR 并发布粘性评论
       run: |
-        ARGS="--fail-on ${{ inputs.fail-on }} --summary --annotations"
-        if [ '${{ inputs.ai }}' = 'true' ]; then ARGS="$ARGS --ai"; fi
-        if [ -n '${{ inputs.pr-number }}' ]; then ARGS="$ARGS --pr ${{ inputs.pr-number }}"; fi
+        ARGS="--fail-on $FAIL_ON --summary --annotations"
+        if [ "$AI" = 'true' ]; then ARGS="$ARGS --ai"; fi
+        if [ -n "$PR_NUMBER" ]; then ARGS="$ARGS --pr $PR_NUMBER"; fi
         node .bounty-guard-src/dist/index.js pr-comment $ARGS
         if [ -f .bounty-guard-summary.md ]; then
           cat .bounty-guard-summary.md >> "${GITHUB_STEP_SUMMARY}"
@@ -51,3 +51,6 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        AI: ${{ inputs.ai }}
+        PR_NUMBER: ${{ inputs.pr-number }}

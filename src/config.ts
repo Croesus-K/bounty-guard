@@ -10,6 +10,8 @@ export interface AiConfig {
   provider: 'openai-compatible' | 'mock' | 'off';
   model?: string;
   baseUrl?: string;
+  /** 单条复核输出长度上限（tokens），默认 500 */
+  maxTokens?: number;
 }
 
 export interface BountyConfig {

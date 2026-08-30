@@ -43,6 +43,7 @@ function provider(fetchImpl: typeof fetch, extra: Partial<ProviderOptions> = {})
     model: 'test-model',
     fetchImpl,
     timeoutMs: 200,
+    retryBaseDelayMs: 1,
     ...extra
   });
 }
@@ -123,6 +124,42 @@ describe('OpenAICompatibleProvider', () => {
     const result = await p.review(baseRequest);
     expect(result.verdict).toBe('unsure');
     expect(calls).toHaveLength(2);
+  });
+
+  it('供应商不支持 response_format（400）时自动去掉该参数重试', async () => {
+    const calls: CapturedCall[] = [];
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      if (calls.length === 1) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => 'response_format is not supported'
+        } as unknown as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: llmJson({ verdict: 'confirmed', explanation: '降级后成功' }) } }]
+        })
+      } as unknown as Response;
+    }) as typeof fetch;
+    const result = await provider(fetchImpl).review(baseRequest);
+    expect(result.verdict).toBe('confirmed');
+    expect(JSON.parse(String(calls[0].init.body)).response_format).toEqual({ type: 'json_object' });
+    expect(JSON.parse(String(calls[1].init.body)).response_format).toBeUndefined();
+  });
+
+  it('max_tokens 默认 500 且可配置', async () => {
+    const calls: CapturedCall[] = [];
+    await provider(scriptedFetch([llmJson({ verdict: 'confirmed', explanation: 'x' })], calls)).review(baseRequest);
+    expect(JSON.parse(String(calls[0].init.body)).max_tokens).toBe(500);
+    const calls2: CapturedCall[] = [];
+    await provider(scriptedFetch([llmJson({ verdict: 'confirmed', explanation: 'x' })], calls2), {
+      maxTokens: 123
+    }).review(baseRequest);
+    expect(JSON.parse(String(calls2[0].init.body)).max_tokens).toBe(123);
   });
 
   it('请求超时触发中断并兜底为 unsure', async () => {

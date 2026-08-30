@@ -78,16 +78,28 @@ Action 会：读取 PR diff → 规则初筛 →（可选）LLM 复核 → 发�
 {
   "ignore": ["node_modules/**", "dist/**", "coverage/**"],
   "failOn": "high",
+  "scanTests": false,
   "ai": {
     "enabled": true,
     "provider": "openai-compatible",
     "baseUrl": "https://api.deepseek.com/v1",
-    "model": "deepseek-chat"
+    "model": "deepseek-chat",
+    "maxTokens": 500
   }
 }
 ```
 
-API Key 走环境变量 `BOUNTY_GUARD_API_KEY` 或 `OPENAI_API_KEY`；DeepSeek / GLM / OpenAI 换 `baseUrl` 即可切换。
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `ignore` | `node_modules` / `dist` / `coverage` | **整体替换**默认值——自定义时建议把默认三项一并写上 |
+| `failOn` | `high` | 门禁等级 high / medium / low / info，非法值在启动时报错（不静默放行） |
+| `scanTests` | `false` | 是否扫描测试文件（tests/、\_\_tests\_\_/、\*.test.\*、\*.spec.\*） |
+| `ai.enabled` | `false` | 启用 LLM 复核（也可用 `--ai` 临时开启） |
+| `ai.provider` | `off` | `openai-compatible` / `mock` / `off`，非法值在启动时报错 |
+| `ai.baseUrl` / `ai.model` | OpenAI 官方 / `gpt-4o-mini` | DeepSeek、GLM 等换 baseUrl 即可切换 |
+| `ai.maxTokens` | `500` | 单条复核输出长度上限（成本闸） |
+
+环境变量：`BOUNTY_GUARD_API_KEY`（或 `OPENAI_API_KEY`）、`BOUNTY_GUARD_BASE_URL`（或 `OPENAI_BASE_URL`）、`BOUNTY_GUARD_MODEL`。
 
 ## 内置规则（v0.1，8 条）
 

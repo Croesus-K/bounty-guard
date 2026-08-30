@@ -45,7 +45,7 @@ export function loadProvider(config: BountyConfig = loadConfig()): LoadedProvide
   const baseUrl = ai.baseUrl ?? process.env.BOUNTY_GUARD_BASE_URL ?? process.env.OPENAI_BASE_URL ?? undefined;
   const model = ai.model ?? process.env.BOUNTY_GUARD_MODEL ?? undefined;
   return {
-    provider: new OpenAICompatibleProvider({ apiKey, baseUrl, model }),
+    provider: new OpenAICompatibleProvider({ apiKey, baseUrl, model, maxTokens: ai.maxTokens }),
     mode: 'llm',
     degraded: false
   };

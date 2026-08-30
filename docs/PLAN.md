@@ -140,6 +140,19 @@ GitHub Action（薄壳）──┘
 均未获其污点模型认可，最终由作者本人提交——形态匹配检测器与合法 API 客户端的
 正面冲突，又一次验证了本项目「初筛 + 复核」立论。
 
+## v0.1.2：LLM 兼容性与成本批次（2026-08-31）
+
+触发：同轮审查的供应商兼容性发现；目标——第一个真实用户配 DeepSeek/GLM 跑 `--ai` 的成败。
+
+- [x] response_format 供应商不支持（400）时自动去掉该参数重试，不再整轮静默降级为 unsure
+- [x] HTTP 429/5xx 指数退避（尊重 Retry-After 头），与解析失败（立即重试）分开处理
+- [x] max_tokens 默认 500 可配置（ai.maxTokens）——单条复核的成本闸
+- [x] action.yml 输入改走 env 传递，脚本不再内插 ${{ inputs }}（注入面收口）
+- [x] README 配置参考表（ignore 替换语义 / scanTests / 环境变量清单）
+
+**v0.2 备忘**：行内豁免注释、SARIF 输出、dangerouslySetInnerHTML 规则、
+`spawn('sh', ['-c', …])` 检测、跨行赋值扫描窗口、fork PR 403 专项提示。
+
 ## 防跑偏三条
 
 1. v0.1 不做：AST 分析（v0.2）、多语言（先做扎实 JS/TS）、自动修复 PR（v0.3）
