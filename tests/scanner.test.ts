@@ -123,4 +123,17 @@ describe('scanDiff', () => {
     diff.files[0].isBinary = true;
     expect(scanDiff(diff, { ignore: [], rules: [ruleBad] })).toHaveLength(0);
   });
+
+  it('默认跳过测试文件，skipTests:false 可包含', () => {
+    const inTestsDir = singleFileDiff([['add', 'badCall();']], 'tests/unit/a.test.ts');
+    const testSuffix = singleFileDiff([['add', 'badCall();']], 'src/app.spec.ts');
+    expect(scanDiff(inTestsDir, { ignore: [], rules: [ruleBad] })).toHaveLength(0);
+    expect(scanDiff(testSuffix, { ignore: [], rules: [ruleBad] })).toHaveLength(0);
+    expect(scanDiff(inTestsDir, { ignore: [], rules: [ruleBad], skipTests: false })).toHaveLength(1);
+  });
+
+  it('非测试路径不受跳过逻辑影响', () => {
+    const diff = singleFileDiff([['add', 'badCall();']], 'src/latest.ts');
+    expect(scanDiff(diff, { ignore: [], rules: [ruleBad] })).toHaveLength(1);
+  });
 });

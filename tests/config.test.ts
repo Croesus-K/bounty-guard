@@ -20,6 +20,7 @@ describe('loadConfig', () => {
     expect(config.failOn).toBe('high');
     expect(config.ai.enabled).toBe(false);
     expect(config.ignore.length).toBeGreaterThan(0);
+    expect(config.scanTests).toBe(false);
   });
 
   it('读取 .bountyrc.json 并与默认值合并（深合并 ai 段）', () => {

@@ -4,7 +4,7 @@
  * 用法：GITHUB_TOKEN=xxx npx tsx scripts/scan-prs.ts owner/repo#123 [owner/repo#456 ...]
  */
 import { parseDiff } from '../src/diff.js';
-import { fetchPrDiff, type GithubContext } from '../src/github.js';
+import { fetchPrDiff, parseRepoSlug, type GithubContext } from '../src/github.js';
 import { scanDiff } from '../src/scanner.js';
 
 const args = process.argv.slice(2);
@@ -42,7 +42,15 @@ for (const arg of args) {
     console.error(`无法解析 PR 标识：${arg}`);
     process.exit(2);
   }
-  const [, repo, pr] = parsed;
+  const [, repoInput, pr] = parsed;
+  let repo: string;
+  try {
+    const { owner, name } = parseRepoSlug(repoInput);
+    repo = `${owner}/${name}`;
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(2);
+  }
   const ctx: GithubContext = { token, repo };
   const diff = parseDiff(await fetchPrDiff(ctx, Number(pr)));
   const findings = scanDiff(diff, { ignore: IGNORE });

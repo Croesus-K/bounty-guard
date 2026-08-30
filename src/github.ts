@@ -6,7 +6,8 @@ import type { Finding } from './types.js';
 /**
  * GitHub REST 交互（零依赖 fetch 封装）：PR diff 读取、粘性评论、
  * Job Summary 暂存与 Actions 告警标注。fetch 可注入以便测试。
- * 约束：环境变量提供的路径一律不做 fs 读写（防路径注入面）。
+ * 约束：环境变量提供的路径一律不做 fs 读写（防路径注入面）；
+ * 所有请求带确定性超时——不假设注入的 fetch 遵守 abort signal。
  */
 
 export interface GithubContext {
@@ -15,30 +16,81 @@ export interface GithubContext {
   repo: string;
   /** fetch 注入点（测试用）；缺省用全局 fetch */
   fetchImpl?: typeof fetch;
+  /** 单次 API 请求超时（毫秒），默认 30 秒 */
+  timeoutMs?: number;
 }
 
-async function githubJson<T>(ctx: GithubContext, path: string, init: RequestInit = {}): Promise<T> {
-  const doFetch = ctx.fetchImpl ?? fetch;
-  const res = await doFetch(`https://api.github.com${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${ctx.token}`,
-      Accept: 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {})
-    }
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** 带确定性超时的请求：超时让调用方必然收敛，而不是无限等待 */
+async function request(ctx: GithubContext, url: string, init: RequestInit = {}): Promise<Response> {
+  const timeoutMs = ctx.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`GitHub API 请求超时（${timeoutMs}ms）`));
+    }, timeoutMs);
   });
-  if (!res.ok) throw new Error(`GitHub API ${path} 失败：HTTP ${res.status}`);
+  try {
+    const pending = (ctx.fetchImpl ?? fetch)(url, { ...init, signal: controller.signal });
+    pending.catch(() => {}); // 防 timeout 赢得竞速后出现未处理拒绝
+    return (await Promise.race([pending, timeout])) as Response;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** 非 2xx 时抛出带响应体摘要的可读错误；403 附常见原因提示 */
+async function assertOk(path: string, res: Response): Promise<void> {
+  if (res.ok) return;
+  let body = '';
+  try {
+    body = await res.text();
+  } catch {
+    body = '';
+  }
+  const hint = res.status === 403 ? '（常见原因：令牌权限不足或触发限流）' : '';
+  throw new Error(`GitHub API ${path} 失败：HTTP ${res.status}${hint}${body ? `：${body.slice(0, 200)}` : ''}`);
+}
+
+async function githubJson<T>(ctx: GithubContext, url: string, init: RequestInit = {}): Promise<T> {
+  const res = await request(ctx, url, init);
+  const path = url.replace('https://api.github.com', '');
+  await assertOk(path, res);
   return (await res.json()) as T;
+}
+
+/** 校验并拆分 owner/name——URL 只允许由合法标识构成，杜绝路径被拼出预期范围 */
+export function parseRepoSlug(repo: string): { owner: string; name: string } {
+  const m = repo.match(/^([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\/([A-Za-z0-9._-]+)$/);
+  if (!m) throw new Error(`仓库标识无效：${repo}（应为 owner/name 形式）`);
+  return { owner: m[1], name: m[2] };
+}
+
+function assertPrNumber(prNumber: number): number {
+  if (!Number.isInteger(prNumber) || prNumber <= 0) throw new Error(`PR 编号无效：${prNumber}`);
+  return prNumber;
+}
+
+/** 仓库级 API URL：标识经 parseRepoSlug 校验 + encodeURIComponent 编码，
+ * 且以固定基底构造 URL 对象——host 结构性不可变，请求目标无法被输入改变 */
+function repoApiUrl(ctx: GithubContext, sub: string): string {
+  const { owner, name } = parseRepoSlug(ctx.repo);
+  return new URL(
+    `repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${sub}`,
+    'https://api.github.com'
+  ).toString();
 }
 
 /** 读取 PR 的 unified diff（REST 原生支持，无需 git 历史） */
 export async function fetchPrDiff(ctx: GithubContext, prNumber: number): Promise<string> {
-  const doFetch = ctx.fetchImpl ?? fetch;
-  const res = await doFetch(`https://api.github.com/repos/${ctx.repo}/pulls/${prNumber}`, {
+  const url = repoApiUrl(ctx, `/pulls/${assertPrNumber(prNumber)}`);
+  const res = await request(ctx, url, {
     headers: { Authorization: `Bearer ${ctx.token}`, Accept: 'application/vnd.github.diff' }
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  await assertOk(url.replace('https://api.github.com', ''), res);
   return res.text();
 }
 
@@ -47,28 +99,35 @@ interface IssueComment {
   body?: string;
 }
 
-/** 粘性评论：已有 bounty-guard 评论则更新，否则新建（重复扫描不刷屏） */
+/** 粘性评论：跨页查找带标记的历史评论，找到则更新，找不到才新建（重复扫描不刷屏） */
 export async function upsertStickyComment(
   ctx: GithubContext,
   prNumber: number,
   body: string,
   marker: string = COMMENT_MARKER
 ): Promise<'created' | 'updated'> {
-  const comments = await githubJson<IssueComment[]>(
-    ctx,
-    `/repos/${ctx.repo}/issues/${prNumber}/comments?per_page=100`
-  );
-  const existing = Array.isArray(comments)
-    ? comments.find((c) => typeof c.body === 'string' && c.body.includes(marker))
-    : undefined;
+  const pr = assertPrNumber(prNumber);
+  const base = repoApiUrl(ctx, `/issues/${pr}`);
+  let page = 1;
+  let existing: IssueComment | undefined;
+  for (;;) {
+    const comments = await githubJson<IssueComment[]>(
+      ctx,
+      `${base}/comments?per_page=100&page=${page}`
+    );
+    if (!Array.isArray(comments) || comments.length === 0) break;
+    existing = comments.find((c) => typeof c.body === 'string' && c.body.includes(marker));
+    if (existing || comments.length < 100 || page >= 10) break;
+    page++;
+  }
   if (existing) {
-    await githubJson(ctx, `/repos/${ctx.repo}/issues/${prNumber}/comments/${existing.id}`, {
+    await githubJson(ctx, `${base}/comments/${existing.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ body })
     });
     return 'updated';
   }
-  await githubJson(ctx, `/repos/${ctx.repo}/issues/${prNumber}/comments`, {
+  await githubJson(ctx, `${base}/comments`, {
     method: 'POST',
     body: JSON.stringify({ body })
   });

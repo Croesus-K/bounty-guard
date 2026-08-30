@@ -8,6 +8,7 @@ import { loadConfig } from './config.js';
 import { parseDiff, unquoteGitPath, type DiffLine, type ParsedDiff, type ParsedFile } from './diff.js';
 import {
   fetchPrDiff,
+  parseRepoSlug,
   resolvePrNumber,
   toAnnotations,
   upsertStickyComment,
@@ -112,7 +113,7 @@ async function scanAndReview(
   wantAi: boolean,
   upgradeOff: boolean
 ): Promise<ScanOutcome> {
-  let findings = scanDiff(diff, { ignore: config.ignore });
+  let findings = scanDiff(diff, { ignore: config.ignore, skipTests: !config.scanTests });
   const scannable = diff.files.filter((f) => !f.isBinary && !matchGlob(f.path, config.ignore));
   const addedLines = scannable.reduce(
     (sum, f) => sum + f.hunks.reduce((n, h) => n + h.lines.filter((l) => l.type === 'add').length, 0),
@@ -129,14 +130,15 @@ async function scanAndReview(
     if (loaded.degraded) {
       console.log(`ℹ️ ${loaded.reason}\n`);
     } else {
-      const outcome = await reviewFindings(findings, loaded.provider);
-      findings = outcome.findings;
-      review = {
-        provider: loaded.provider.name,
-        confirmed: outcome.findings.length,
-        filtered: outcome.filtered,
-        downgraded: outcome.downgraded
-      };
+        const outcome = await reviewFindings(findings, loaded.provider);
+        findings = outcome.findings;
+        review = {
+          provider: loaded.provider.name,
+          confirmed: outcome.findings.length,
+          filtered: outcome.filtered,
+          downgraded: outcome.downgraded,
+          unreviewed: outcome.unreviewed
+        };
     }
   }
   return { findings, scannedFiles: scannable.length, addedLines, review };
@@ -211,9 +213,16 @@ program
     try {
       const token = process.env.GITHUB_TOKEN;
       if (!token) throw new UsageError('缺少 GITHUB_TOKEN 环境变量');
-      const repo = options.repo ?? process.env.GITHUB_REPOSITORY;
+      const repoInput = options.repo ?? process.env.GITHUB_REPOSITORY;
+      if (!repoInput) throw new UsageError('无法确定仓库：用 --repo owner/name 或设置 GITHUB_REPOSITORY');
+      let repo: string;
+      try {
+        const { owner, name } = parseRepoSlug(repoInput);
+        repo = `${owner}/${name}`;
+      } catch (err) {
+        throw new UsageError(err instanceof Error ? err.message : String(err));
+      }
       const prNumber = resolvePrNumber(options.pr);
-      if (!repo) throw new UsageError('无法确定仓库：用 --repo owner/name 或设置 GITHUB_REPOSITORY');
       if (!prNumber) throw new UsageError('无法确定 PR 编号：用 --pr <n> 或在 pull_request 事件中运行');
       const config = loadConfig();
       const failOn = resolveFailOn(config, options.failOn);

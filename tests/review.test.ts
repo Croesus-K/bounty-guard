@@ -98,5 +98,40 @@ describe('reviewFindings', () => {
     expect(outcome.findings).toHaveLength(0);
     expect(outcome.filtered).toBe(0);
     expect(outcome.downgraded).toBe(0);
+    expect(outcome.reviewed).toBe(0);
+    expect(outcome.unreviewed).toBe(0);
+  });
+
+  it('相同规则与片段的告警去重，共享一次复核结论', async () => {
+    const requests: LLMReviewRequest[] = [];
+    const fs = [finding('high'), finding('high', { file: 'src/b.ts', line: 9 })];
+    const outcome = await reviewFindings(fs, scriptedProvider([{ verdict: 'confirmed', explanation: 'x' }], requests));
+    expect(requests).toHaveLength(1);
+    expect(outcome.reviewed).toBe(2);
+    expect(outcome.findings.every((f) => f.review)).toBe(true);
+  });
+
+  it('超出 maxReviews 的告警保留规则原判并计入 unreviewed', async () => {
+    const fs = [finding('high'), finding('low', { ruleId: 'r-2' })];
+    const outcome = await reviewFindings(
+      fs,
+      scriptedProvider([{ verdict: 'false-positive', explanation: 'x' }]),
+      { maxReviews: 1 }
+    );
+    // high 严重度更高、优先送审并被过滤；low 保留原判
+    expect(outcome.findings.map((f) => f.ruleId)).toEqual(['r-2']);
+    expect(outcome.filtered).toBe(1);
+    expect(outcome.reviewed).toBe(1);
+    expect(outcome.unreviewed).toBe(1);
+  });
+
+  it('并发复核不丢结果', async () => {
+    const fs = Array.from({ length: 12 }, (_, i) => finding('medium', { ruleId: `r-${i}`, line: i + 1 }));
+    const outcome = await reviewFindings(fs, scriptedProvider([{ verdict: 'confirmed', explanation: 'x' }]), {
+      concurrency: 4
+    });
+    expect(outcome.findings).toHaveLength(12);
+    expect(outcome.reviewed).toBe(12);
+    expect(outcome.unreviewed).toBe(0);
   });
 });

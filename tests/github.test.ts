@@ -10,6 +10,7 @@ import {
 } from '../src/github.js';
 import { COMMENT_MARKER } from '../src/report.js';
 import type { GithubContext } from '../src/github.js';
+import { fetchPrDiff, parseRepoSlug } from '../src/github.js';
 import type { Finding } from '../src/types.js';
 
 afterEach(() => {
@@ -41,16 +42,61 @@ function fetchStub(respond: JsonResponder, calls: Array<{ path: string; init: Re
   return { token: 'token-x', repo: 'o/r', fetchImpl };
 }
 
+describe('parseRepoSlug', () => {
+  it('接受合法 owner/name 并拆分', () => {
+    expect(parseRepoSlug('Croesus-K/bounty-guard')).toEqual({ owner: 'Croesus-K', name: 'bounty-guard' });
+  });
+
+  it('拒绝路径操纵与畸形标识', () => {
+    expect(() => parseRepoSlug('../x/y')).toThrow(/仓库标识无效/);
+    expect(() => parseRepoSlug('o/r?x=1')).toThrow(/仓库标识无效/);
+    expect(() => parseRepoSlug('onlyname')).toThrow(/仓库标识无效/);
+    expect(() => parseRepoSlug('')).toThrow(/仓库标识无效/);
+  });
+
+  it('fetchPrDiff 拒绝无效仓库标识（SSRF 防线）', async () => {
+    const ctx: GithubContext = { token: 't', repo: '../evil' };
+    await expect(fetchPrDiff(ctx, 1)).rejects.toThrow(/仓库标识无效/);
+  });
+});
+
 describe('upsertStickyComment', () => {
   it('无历史评论时创建', async () => {
     const calls: Array<{ path: string; init: RequestInit }> = [];
     const ctx = fetchStub(() => [], calls);
     const result = await upsertStickyComment(ctx, 7, '报告内容');
     expect(result).toBe('created');
-    expect(calls[0].path).toBe('/repos/o/r/issues/7/comments?per_page=100');
+    expect(calls[0].path).toBe('/repos/o/r/issues/7/comments?per_page=100&page=1');
     expect(calls[1].path).toBe('/repos/o/r/issues/7/comments');
     expect(calls[1].init.method).toBe('POST');
     expect(String(calls[1].init.body)).toContain('报告内容');
+  });
+
+  it('粘性评论跨页查找：旧评论在第 101 条之后也能更新', async () => {
+    const calls: Array<{ path: string; init: RequestInit }> = [];
+    const page1 = Array.from({ length: 100 }, (_, i) => ({ id: i + 1, body: `普通评论 ${i}` }));
+    const ctx = fetchStub(
+      (path) => (path.includes('page=2') ? [{ id: 999, body: `旧报告 ${COMMENT_MARKER}` }] : page1),
+      calls
+    );
+    const result = await upsertStickyComment(ctx, 7, '新报告');
+    expect(result).toBe('updated');
+    expect(calls.some((c) => c.path.includes('page=2'))).toBe(true);
+    expect(calls[calls.length - 1].path).toBe('/repos/o/r/issues/7/comments/999');
+    expect(calls[calls.length - 1].init.method).toBe('PATCH');
+  });
+
+  it('API 请求超时抛出可读错误', async () => {
+    const hanging = (async () => new Promise<Response>(() => {})) as typeof fetch;
+    const ctx: GithubContext = { token: 't', repo: 'o/r', fetchImpl: hanging, timeoutMs: 5 };
+    await expect(fetchPrDiff(ctx, 1)).rejects.toThrow(/超时/);
+  });
+
+  it('HTTP 错误带响应体摘要与限流提示', async () => {
+    const fetchImpl = (async () =>
+      ({ ok: false, status: 403, text: async () => '{"message":"rate limit"}' }) as unknown as Response) as typeof fetch;
+    const ctx: GithubContext = { token: 't', repo: 'o/r', fetchImpl };
+    await expect(fetchPrDiff(ctx, 1)).rejects.toThrow(/403[\s\S]*限流[\s\S]*rate limit/);
   });
 
   it('已有粘性评论时按 id 更新而非新建', async () => {

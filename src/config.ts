@@ -17,12 +17,15 @@ export interface BountyConfig {
   ignore: string[];
   /** 告警达到该等级时以非零码退出（CI 门禁依据） */
   failOn: Severity;
+  /** 是否把测试文件也纳入扫描（默认跳过——测试样例是已知误报源） */
+  scanTests?: boolean;
   ai: AiConfig;
 }
 
 export const DEFAULT_CONFIG: BountyConfig = {
   ignore: ['node_modules/**', 'dist/**', 'coverage/**'],
   failOn: 'high',
+  scanTests: false,
   ai: { enabled: false, provider: 'off' }
 };
 

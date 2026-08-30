@@ -74,6 +74,16 @@ describe('renderReport', () => {
     expect(text).toContain('LLM 未能确证，保留原判');
     expect(text).toContain('💡 建议');
   });
+
+  it('复核汇总可携带未复核计数', () => {
+    const text = renderReport([], {
+      source: 's',
+      scannedFiles: 0,
+      addedLines: 0,
+      review: { provider: 'p', confirmed: 0, filtered: 0, downgraded: 0, unreviewed: 3 }
+    });
+    expect(text).toContain('未复核 3（保留规则原判）');
+  });
 });
 
 describe('renderMarkdownReport', () => {

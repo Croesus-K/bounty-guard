@@ -28,7 +28,7 @@ export interface ReportMeta {
   scannedFiles: number;
   addedLines: number;
   /** LLM 复核汇总（未开启复核时缺省） */
-  review?: { provider: string; confirmed: number; filtered: number; downgraded: number };
+  review?: { provider: string; confirmed: number; filtered: number; downgraded: number; unreviewed?: number };
 }
 
 /** 渲染中文终端报告，按文件分组 */
@@ -37,8 +37,9 @@ export function renderReport(findings: Finding[], meta: ReportMeta): string {
   out.push('bounty-guard 扫描报告');
   out.push(`来源：${meta.source} ｜ 扫描文件 ${meta.scannedFiles} 个 ｜ 新增行 ${meta.addedLines} 行`);
   if (meta.review) {
+    const r = meta.review;
     out.push(
-      `LLM 复核（${meta.review.provider}）：确认 ${meta.review.confirmed} · 误报过滤 ${meta.review.filtered} · 严重度下调 ${meta.review.downgraded}`
+      `LLM 复核（${r.provider}）：确认 ${r.confirmed} · 误报过滤 ${r.filtered} · 严重度下调 ${r.downgraded}${r.unreviewed ? ` · 未复核 ${r.unreviewed}（保留规则原判）` : ''}`
     );
   }
   out.push('');
@@ -86,9 +87,10 @@ export function renderMarkdownReport(findings: Finding[], meta: ReportMeta): str
   out.push('');
   out.push(`来源：${meta.source} ｜ 扫描文件 ${meta.scannedFiles} 个 ｜ 新增行 ${meta.addedLines} 行`);
   if (meta.review) {
+    const r = meta.review;
     out.push('');
     out.push(
-      `**LLM 复核（${meta.review.provider}）**：确认 ${meta.review.confirmed} · 误报过滤 ${meta.review.filtered} · 严重度下调 ${meta.review.downgraded}`
+      `**LLM 复核（${r.provider}）**：确认 ${r.confirmed} · 误报过滤 ${r.filtered} · 严重度下调 ${r.downgraded}${r.unreviewed ? ` · 未复核 ${r.unreviewed}（保留规则原判）` : ''}`
     );
   }
   out.push('');

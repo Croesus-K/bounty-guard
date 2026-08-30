@@ -14,6 +14,14 @@ export interface ScanOptions {
   ignore: string[];
   /** 规则集注入点（测试用）；缺省为全部已注册规则 */
   rules?: Rule[];
+  /** 是否包含测试文件；缺省跳过——测试样例是已知的误报源（宁可漏报不可误报） */
+  skipTests?: boolean;
+}
+
+/** 测试文件识别：tests/、__tests__/、spec/ 目录与 *.test.* / *.spec.* 后缀 */
+export function isTestFile(path: string): boolean {
+  const p = path.replace(/\\/g, '/');
+  return /(^|\/)(tests?|__tests__|spec)(\/|$)/i.test(p) || /\.(test|spec)\.[cm]?[jt]sx?$/i.test(p);
 }
 
 /** 命中行前后各至多 3 行的 add/context 文本（不含命中行），供需要上下文的规则使用 */
@@ -35,6 +43,7 @@ export function scanDiff(diff: ParsedDiff, options: ScanOptions): Finding[] {
 
   for (const file of diff.files) {
     if (file.isBinary) continue;
+    if (options.skipTests !== false && isTestFile(file.path)) continue;
     if (matchGlob(file.path, options.ignore)) continue;
     for (const hunk of file.hunks) {
       for (let i = 0; i < hunk.lines.length; i++) {
