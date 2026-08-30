@@ -61,15 +61,25 @@ GitHub Action（薄壳）──┘
 
 验收：对旧仓库出报告；**回滚赏金契约修复前版本实测能抓出当年 XSS**；开始记录命中/误报指标。
 
-## Week 2：LLM 复核层
+## Week 2：LLM 复核层 ✅（真实 Key 端到端待补）
 
-- [ ] OpenAI 兼容适配器（baseUrl/model 可配置）
-- [ ] 结构化 JSON 输出 + 解析失败重试
-- [ ] 流水线：规则候选 → LLM 核实（真问题/误报/降级严重度）→ 修复建议（带代码片段）
-- [ ] 无 Key 自动降级；Token 上限与 diff 截断
-- [ ] Mock 全量测试 + 真实 Key 端到端一次
+- [x] OpenAI 兼容适配器（baseUrl/model 可配置；Key 走 BOUNTY_GUARD_API_KEY / OPENAI_API_KEY）
+- [x] 结构化 JSON 输出 + 解析失败重试；超时/网络失败确定性收敛，单条失败兜底 unsure 不抛异常
+- [x] 流水线：规则候选 → LLM 核实（真问题/误报/降级严重度）→ 修复建议（LLM 建议优先展示）
+- [x] 无 Key 自动降级（CLI 明示原因）；Token 上限：命中行 400 字符 / 上下文 6 行 × 160 字符
+- [x] Mock 全量测试（84 项全绿）
+- [ ] 真实 Key 端到端一次（待配置 Key 后补跑）
 
-验收：Mock 测试全绿；测试仓库 PR 全流程跑通一次。
+### Week 2 验收记录（2026-08-31）
+
+- 严重度治理三重防线：提示词禁止上调 → 解析层丢弃非下调建议 → 流水线双保险；
+  复核置信链 confirmed / false-positive / unsure 全部落地
+- 误报过滤量化进报告头：「LLM 复核（provider）：确认 N · 误报过滤 M · 下调 K」；
+  未确证告警标注「保留原判」，不影响门禁判定
+- 超时用 Promise.race 确定性收敛（不假设 fetch 遵守 abort signal），
+  竞速失败挂 catch 防 unhandled rejection
+- E2E：dogfood diff --ai 全链路（mock）跑通；无 Key 降级提示正常
+- 「测试仓库 PR 全流程」依赖 Week 3 的 Action 基建，归入下周验收
 
 ## Week 3：GitHub Action 与 PR 评论
 
