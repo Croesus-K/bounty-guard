@@ -128,8 +128,7 @@ export function renderMarkdownReport(findings: Finding[], meta: ReportMeta): str
   return out.join('\n');
 }
 
-/** SARIF 级别映射：high → error，medium → warning，low/info → note */
-function sarifLevel(severity: Severity): 'error' | 'warning' | 'note' {
+/** SARIF 级别映射：high → error，medium → warning，low/info → note */function sarifLevel(severity: Severity): 'error' | 'warning' | 'note' {
   return severity === 'high' ? 'error' : severity === 'medium' ? 'warning' : 'note';
 }
 
@@ -181,4 +180,33 @@ export function renderSarif(
       }
     ]
   };
+}
+
+export interface MetricsRow {
+  pr: string;
+  addedLines: number;
+  findings: string[];
+}
+
+/** 周报表格：配合 scripts/weekly-report.ts 定时生成 docs/metrics.md */
+export function renderMetricsTable(rows: MetricsRow[], date: string): string {
+  const totalAdded = rows.reduce((n, r) => n + r.addedLines, 0);
+  const totalFindings = rows.reduce((n, r) => n + r.findings.length, 0);
+  return [
+    '# 误报率周报',
+    '',
+    `> 自动生成于 ${date} · 来源清单 \`scripts/metrics-prs.txt\` · 样本 ${rows.length} 个真实 PR`,
+    '',
+    '| 指标 | 数值 |',
+    '|---|---|',
+    `| 新增行 | ${totalAdded} |`,
+    `| 命中 | ${totalFindings} |`,
+    '',
+    '| PR | 新增行 | 命中 |',
+    '|---|---|---|',
+    ...rows.map((r) => `| ${r.pr} | ${r.addedLines} | ${r.findings.length === 0 ? '0' : r.findings.join('<br>')} |`),
+    '',
+    '<sub>由 bounty-guard 自动生成，每周五更新</sub>',
+    ''
+  ].join('\n');
 }

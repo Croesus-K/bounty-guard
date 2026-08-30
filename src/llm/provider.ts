@@ -18,6 +18,9 @@ export interface LoadedProvider {
   /** true=想要复核但条件不满足而降级（CLI 会提示原因） */
   degraded: boolean;
   reason?: string;
+  /** mode=llm 时提供——供 doctor 探测连通性（不会出现在任何输出中） */
+  baseUrl?: string;
+  apiKey?: string;
 }
 
 export function loadProvider(config: BountyConfig = loadConfig()): LoadedProvider {
@@ -47,6 +50,8 @@ export function loadProvider(config: BountyConfig = loadConfig()): LoadedProvide
   return {
     provider: new OpenAICompatibleProvider({ apiKey, baseUrl, model, maxTokens: ai.maxTokens }),
     mode: 'llm',
-    degraded: false
+    degraded: false,
+    baseUrl: (baseUrl ?? 'https://api.openai.com/v1').replace(/\/+$/, ''),
+    apiKey
   };
 }

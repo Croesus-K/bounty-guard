@@ -165,6 +165,17 @@ GitHub Action（薄壳）──┘
 **验收**：122 项测试全绿。注：安全 hook 已停用——本批规则源码全部以自然写法落地，
 不再需要运行时拼装规避（EXEC_WORD 等写法保留为历史兼容）。
 
+## v0.1.5：doctor、pre-commit 与周报批次（2026-08-31）
+
+- [x] `doctor` 命令：Node / Git / 配置文件 / AI 供应商连通性（/models 探测）四项体检，--json 可机读
+- [x] `init-hooks` 命令：pre-commit 钩子安装/卸载（--staged 暂存模式、--force 覆盖、BOUNTY_GUARD_SKIP 跳过）
+- [x] `scan --git --staged`：只扫描已暂存变更
+- [x] 误报率周报自动化：scripts/weekly-report.ts + metrics.yml 每周五定时生成 docs/metrics.md 并自动提交
+- [x] LoadedProvider 透出 baseUrl/apiKey 供连通性探测
+
+**验收**：133 项测试全绿（新增 11 项）；doctor 实测四项通过；
+首份 docs/metrics.md 已生成（9 PR / 1298 行 / 0 命中）。
+
 ## v0.1.3：表达力批次（2026-08-31）
 
 - [x] 行内豁免注释：命中行含 `// bounty-guard-ignore` 即跳过

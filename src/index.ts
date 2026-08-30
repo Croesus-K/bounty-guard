@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import type { BountyConfig } from './config.js';
 import { loadConfig } from './config.js';
+import { checkAi, checkConfig, checkConfigError, checkGit, checkNodeVersion, hasFailure, renderChecks, type Check } from './doctor.js';
 import { parseDiff, unquoteGitPath, type DiffLine, type ParsedDiff, type ParsedFile } from './diff.js';
 import {
   fetchPrDiff,
@@ -14,6 +15,7 @@ import {
   upsertStickyComment,
   writeSummaryFile
 } from './github.js';
+import { installPreCommitHook, uninstallPreCommitHook } from './hooks.js';
 import { matchGlob } from './glob.js';
 import { loadProvider } from './llm/provider.js';
 import { renderMarkdownReport, renderReport, renderSarif, shouldFail, type ReportMeta } from './report.js';
@@ -160,14 +162,16 @@ program
   .command('scan')
   .description('扫描代码变更中的安全问题（规则初筛；LLM 复核可选）')
   .option('--git', '扫描当前仓库的未提交变更')
+  .option('--staged', '只扫描已暂存变更（需搭配 --git；pre-commit 场景）')
   .option('--diff <file>', '从 unified diff 文件扫描')
   .option('--ai', '启用 LLM 复核（无 API Key 时自动降级为纯规则模式）')
   .option('--fail-on <severity>', '门禁等级：high | medium | low | info（覆盖配置文件）')
   .option('-f, --format <fmt>', '输出格式：text | sarif | json（默认 text）')
-  .action(async (options: { git?: boolean; diff?: string; ai?: boolean; failOn?: string; format?: string }) => {
+  .action(async (options: { git?: boolean; staged?: boolean; diff?: string; ai?: boolean; failOn?: string; format?: string }) => {
     try {
       if (!options.git && !options.diff) throw new UsageError(USAGE_HINT);
       if (options.git && options.diff) throw new UsageError('两种扫描来源互斥，只能二选一');
+      if (options.staged && !options.git) throw new UsageError('--staged 需要与 --git 搭配使用');
       const config = loadConfig();
       const failOn = resolveFailOn(config, options.failOn);
 
@@ -178,6 +182,9 @@ program
         if (options.diff) {
           diff = parseDiff(readFileSync(options.diff, 'utf8'));
           source = `diff 文件 ${options.diff}`;
+        } else if (options.staged) {
+          diff = parseDiff(await runGit(['diff', '--cached'], cwd));
+          source = 'git 已暂存变更';
         } else {
           diff = await collectGitChanges(cwd);
           source = 'git 未提交变更';
@@ -272,6 +279,114 @@ program
       if (options.annotations) for (const line of toAnnotations(outcome.findings)) console.log(line);
       if (options.summary) console.log(`📄 Job Summary 内容已写入 ${writeSummaryFile(markdown)}`);
       process.exitCode = shouldFail(outcome.findings, failOn) ? 1 : 0;
+    } catch (err) {
+      if (err instanceof UsageError) {
+        console.error(err.message);
+        process.exitCode = 2;
+        return;
+      }
+      throw err;
+    }
+  });
+
+const aiProbe = async (baseUrl: string, apiKey: string): Promise<Omit<Check, 'name'>> => {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    const res = await fetch(new URL('models', base), {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (res.ok) return { status: 'ok', detail: `模型服务连通（${base}models）` };
+    if (res.status === 401) return { status: 'fail', detail: 'API Key 无效（401）' };
+    if (res.status === 404) {
+      return { status: 'warn', detail: '端点未提供 /models，无法自动验证——可跑一次 --ai 实测' };
+    }
+    return { status: 'warn', detail: `HTTP ${res.status}（不影响使用，仅无法自动验证）` };
+  } catch (err) {
+    return { status: 'fail', detail: `无法连接模型服务：${err instanceof Error ? err.message : String(err)}` };
+  }
+};
+
+program
+  .command('doctor')
+  .description('体检配置与环境（Node / Git / 配置文件 / AI 供应商连通性）')
+  .option('--json', '以 JSON 输出检查结果')
+  .action(async (options: { json?: boolean }) => {
+    const checks: Check[] = [];
+    checks.push(checkNodeVersion(process.versions.node));
+    let gitVersion: string | null = null;
+    let isRepo = false;
+    try {
+      const cwd = process.cwd();
+      gitVersion = (await runGit(['--version'], cwd)).trim().replace(/^git version /, '');
+      isRepo = (await runGit(['rev-parse', '--is-inside-work-tree'], cwd)).trim() === 'true';
+    } catch {
+      gitVersion = null;
+    }
+    checks.push(checkGit(gitVersion, isRepo));
+    let config: BountyConfig | undefined;
+    try {
+      config = loadConfig();
+      checks.push(checkConfig(config));
+    } catch (err) {
+      checks.push(checkConfigError(err));
+    }
+    try {
+      const loaded = loadProvider(config ?? loadConfig());
+      checks.push(await checkAi(loaded, aiProbe));
+    } catch (err) {
+      checks.push({
+        name: 'AI 复核',
+        status: 'warn',
+        detail: `跳过：${err instanceof Error ? err.message : String(err)}`
+      });
+    }
+    if (options.json) {
+      console.log(JSON.stringify({ ok: !hasFailure(checks), checks }, null, 2));
+    } else {
+      console.log('bounty-guard doctor 体检报告\n');
+      console.log(renderChecks(checks));
+      console.log('');
+      console.log(hasFailure(checks) ? '✗ 存在需要处理的问题' : '✓ 环境就绪');
+    }
+    process.exitCode = hasFailure(checks) ? 1 : 0;
+  });
+
+program
+  .command('init-hooks')
+  .description('在当前仓库安装 pre-commit 钩子（提交前自动扫描）')
+  .option('--fail-on <severity>', '门禁等级：high | medium | low | info（默认取配置文件）')
+  .option('--staged', '只扫描已暂存变更（pre-commit 标准姿势）')
+  .option('--force', '覆盖已存在的钩子文件')
+  .option('--uninstall', '移除由 bounty-guard 生成的钩子')
+  .action(async (options: { failOn?: string; staged?: boolean; force?: boolean; uninstall?: boolean }) => {
+    try {
+      const cwd = process.cwd();
+      let gitDir: string;
+      try {
+        gitDir = (await runGit(['rev-parse', '--absolute-git-dir'], cwd)).trim();
+      } catch {
+        throw new UsageError('当前目录不在 git 仓库中，无法安装钩子');
+      }
+      if (options.uninstall) {
+        const removed = uninstallPreCommitHook(gitDir);
+        console.log(removed ? '✅ 已移除 bounty-guard 生成的 pre-commit 钩子' : 'ℹ️ 未发现 bounty-guard 生成的钩子');
+        return;
+      }
+      const config = loadConfig();
+      const failOn = resolveFailOn(config, options.failOn);
+      const path = installPreCommitHook(
+        gitDir,
+        { failOn, staged: Boolean(options.staged) },
+        Boolean(options.force)
+      );
+      console.log(`✅ pre-commit 钩子已安装：${path}`);
+      console.log(
+        `   提交前将自动扫描（--fail-on ${failOn}${options.staged ? ' --staged' : ''}）；临时跳过单次提交：BOUNTY_GUARD_SKIP=1 git commit ...`
+      );
     } catch (err) {
       if (err instanceof UsageError) {
         console.error(err.message);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderMarkdownReport, renderReport, renderSarif, shouldFail } from '../src/report.js';
+import { renderMarkdownReport, renderMetricsTable, renderReport, renderSarif, shouldFail } from '../src/report.js';
 import type { Finding, Severity } from '../src/types.js';
 
 function finding(severity: Severity, file = 'src/a.js', line = 3): Finding {
@@ -145,6 +145,24 @@ describe('renderSarif', () => {
     expect(sarif.runs[0].results[0].level).toBe('error');
     expect(sarif.runs[0].results[2].level).toBe('note');
     expect(sarif.runs[0].results[0].locations[0].physicalLocation.region.startLine).toBe(3);
+  });
+});
+
+describe('renderMetricsTable', () => {
+  it('生成周报表格：汇总、明细与生成日期', () => {
+    const text = renderMetricsTable(
+      [
+        { pr: 'expressjs/express#7437', addedLines: 400, findings: [] },
+        { pr: 'axios/axios#11175', addedLines: 120, findings: ['low/plain-http/src/a.js:3'] }
+      ],
+      '2026-08-31'
+    );
+    expect(text).toContain('# 误报率周报');
+    expect(text).toContain('自动生成于 2026-08-31');
+    expect(text).toContain('| 新增行 | 520 |');
+    expect(text).toContain('| 命中 | 1 |');
+    expect(text).toContain('| expressjs/express#7437 | 400 | 0 |');
+    expect(text).toContain('low/plain-http/src/a.js:3');
   });
 });
 

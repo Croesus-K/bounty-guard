@@ -1,0 +1,35 @@
+name: 误报率周报
+
+on:
+  schedule:
+    - cron: '0 3 * * 5' # 每周五 03:00 UTC（北京时间 11:00）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: 生成周报
+        run: npx tsx scripts/weekly-report.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 提交周报
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain docs/metrics.md)" ]; then
+            git add docs/metrics.md
+            git commit -m "docs: 每周误报率周报（自动生成）"
+            git push
+          else
+            echo "周报无变化，跳过提交"
+          fi

@@ -48,9 +48,27 @@ npx bounty-guard scan --diff pr.diff --fail-on high
 # 输出 SARIF（可对接 GitHub code-scanning）或 JSON
 npx bounty-guard scan --diff pr.diff --format sarif
 
+# pre-commit 场景：只扫已暂存变更
+npx bounty-guard scan --git --staged --fail-on high
+
 # 启用 LLM 复核（无 Key 自动降级为纯规则模式）
 BOUNTY_GUARD_API_KEY=sk-xxx npx bounty-guard scan --git --ai
 ```
+
+### 体检与本地钩子
+
+```bash
+npx bounty-guard doctor        # 体检：Node / Git / 配置 / AI 供应商连通性（--json 可机读）
+npx bounty-guard init-hooks    # 安装 pre-commit 钩子：提交前自动扫描，红灯阻断提交
+npx bounty-guard init-hooks --uninstall   # 移除钩子
+BOUNTY_GUARD_SKIP=1 git commit # 临时跳过一次钩子
+```
+
+### 误报率周报
+
+`scripts/weekly-report.ts` + 定时任务每周五自动扫描 `scripts/metrics-prs.txt` 清单里的真实 PR，
+生成 [docs/metrics.md](docs/metrics.md) 并自动提交——**持续更新的真实误报率仪表盘**，
+也可本地手动触发：`GITHUB_TOKEN=xxx npx tsx scripts/weekly-report.ts`。
 
 ### GitHub Action
 
