@@ -1,0 +1,634 @@
+diff --git a/index.html b/index.html
+index 31f7fe4..d5f3c4d 100644
+--- a/index.html
++++ b/index.html
+@@ -213,63 +213,13 @@
+             border: 1px dashed #6a1111;
+         }
+ 
+-        /* 折叠面板样式 */
+-        .collapse-panel {
+-            margin-bottom: 20px;
+-            border-radius: 8px;
+-            background: rgba(15, 15, 15, 0.95);
+-            border: 1px solid #4a1111;
+-            overflow: hidden;
+-        }
+-
+-        .collapse-header {
+-            padding: 15px 20px;
+-            background: #2a0b0b;
+-            display: flex;
+-            justify-content: space-between;
+-            align-items: center;
+-            cursor: pointer;
+-            user-select: none;
+-            transition: background 0.3s;
+-        }
+-
+-        .collapse-header:hover {
+-            background: #3a1111;
+-        }
+-
+-        .collapse-title {
+-            font-size: 1.2rem;
+-            color: #e53935;
+-            font-weight: bold;
+-        }
+-
+-        .collapse-icon {
+-            font-size: 1.4rem;
+-            color: #d8d1c7;
+-            transition: transform 0.3s ease;
+-        }
+-
+-        .collapse-icon.rotated {
+-            transform: rotate(180deg);
+-        }
+-
+-        .collapse-content {
+-            max-height: 0;
+-            overflow: hidden;
+-            transition: max-height 0.5s ease;
+-        }
+-
+-        .collapse-content.open {
+-            max-height: 800px;
+-        }
+-
+         .task-list {
+             display: flex;
+             flex-direction: column;
+             gap: 18px;
+             max-height: 620px;
+             overflow-y: auto;
+-            padding: 15px 20px;
++            padding-right: 10px;
+         }
+ 
+         .task-item {
+@@ -380,12 +330,6 @@
+             color: #a89a8e;
+             line-height: 1.5;
+         }
+-
+-        .empty-tip {
+-            text-align: center;
+-            color: #666;
+-            padding: 20px 0;
+-        }
+     </style>
+ </head>
+ <body>
+@@ -440,52 +384,14 @@
+                 <div class="reward-stat">
+                     <h3>契约统计</h3>
+                     <p>已完成猎杀：<span id="finishCount">0</span></p>
+-                    <p>已过期契约：<span id="expiredCount">0</span></p>
+-                    <p>有效契约数：<span id="validCount">0</span></p>
+                     <p>总契约数：<span id="totalCount">0</span></p>
+                 </div>
+             </div>
+ 
+             <div class="card">
+-                <h2 class="card-title">契约清单</h2>
+-                
+-                <!-- 有效契约面板 -->
+-                <div class="collapse-panel">
+-                    <div class="collapse-header" data-target="validTasks">
+-                        <span class="collapse-title">🔴 有效契约（按到期时间排序）</span>
+-                        <span class="collapse-icon rotated">▼</span>
+-                    </div>
+-                    <div class="collapse-content open" id="validTasks">
+-                        <div class="task-list" id="validTaskList">
+-                            <p class="empty-tip">暂无有效契约，等待发布...</p>
+-                        </div>
+-                    </div>
+-                </div>
+-
+-                <!-- 过期契约面板 -->
+-                <div class="collapse-panel">
+-                    <div class="collapse-header" data-target="expiredTasks">
+-                        <span class="collapse-title">🟠 过期契约（按过期时间排序）</span>
+-                        <span class="collapse-icon">▼</span>
+-                    </div>
+-                    <div class="collapse-content" id="expiredTasks">
+-                        <div class="task-list" id="expiredTaskList">
+-                            <p class="empty-tip">暂无过期契约</p>
+-                        </div>
+-                    </div>
+-                </div>
+-
+-                <!-- 已完成契约面板 -->
+-                <div class="collapse-panel">
+-                    <div class="collapse-header" data-target="finishedTasks">
+-                        <span class="collapse-title">🟢 已完成契约（按完成时间逆向排序）</span>
+-                        <span class="collapse-icon">▼</span>
+-                    </div>
+-                    <div class="collapse-content" id="finishedTasks">
+-                        <div class="task-list" id="finishedTaskList">
+-                            <p class="empty-tip">暂无已完成契约</p>
+-                        </div>
+-                    </div>
++                <h2 class="card-title">契约清单（按到期时间排序）</h2>
++                <div class="task-list" id="taskList">
++                    <p style="text-align:center; color:#666;">暂无契约，等待发布...</p>
+                 </div>
+             </div>
+         </div>
+@@ -494,22 +400,6 @@
+     <script>
+         let tasks = JSON.parse(localStorage.getItem('contractTasks')) || [];
+ 
+-        // HTML 转义，防止用户输入注入脚本
+-        function escapeHtml(value) {
+-            return String(value ?? '')
+-                .replaceAll('&', '&amp;')
+-                .replaceAll('<', '&lt;')
+-                .replaceAll('>', '&gt;')
+-                .replaceAll('"', '&quot;')
+-                .replaceAll("'", '&#39;');
+-        }
+-
+-        // 转 datetime-local 输入框格式（本地时区，避免 toISOString 的时区偏移）
+-        function toLocalInputValue(date) {
+-            const pad = n => String(n).padStart(2, '0');
+-            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+-        }
+-
+         const taskForm = document.getElementById('taskForm');
+         const taskId = document.getElementById('taskId');
+         const taskName = document.getElementById('taskName');
+@@ -520,18 +410,13 @@
+         const addBtn = document.getElementById('addBtn');
+         const updateBtn = document.getElementById('updateBtn');
+         const cancelBtn = document.getElementById('cancelBtn');
+-        const validTaskList = document.getElementById('validTaskList');
+-        const expiredTaskList = document.getElementById('expiredTaskList');
+-        const finishedTaskList = document.getElementById('finishedTaskList');
++        const taskList = document.getElementById('taskList');
+         const finishCount = document.getElementById('finishCount');
+-        const expiredCount = document.getElementById('expiredCount');
+-        const validCount = document.getElementById('validCount');
+         const totalCount = document.getElementById('totalCount');
+         const importFile = document.getElementById('importFile');
+         const exportBtn = document.getElementById('exportBtn');
+         const clock = document.getElementById('clock');
+ 
+-        // 更新时钟
+         function updateClock() {
+             const now = new Date();
+             const options = { 
+@@ -543,220 +428,47 @@
+         setInterval(updateClock, 1000);
+         updateClock();
+ 
+-        // 计算倒计时；是否逾期作为独立状态返回，不允许外部靠文案字符串判断
+         function calculateCountdown(deadlineStr) {
+             const now = new Date().getTime();
+             const deadlineTime = new Date(deadlineStr).getTime();
+             const diff = deadlineTime - now;
+ 
+-            if (diff <= 0) {
+-                const overdueMs = -diff;
++            if (diff < 0) {
++                const overdueMs = Math.abs(diff);
+                 const day = Math.floor(overdueMs / (1000 * 60 * 60 * 24));
+                 const hour = Math.floor((overdueMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                 const min = Math.floor((overdueMs % (1000 * 60 * 60)) / (1000 * 60));
+-                return { text: `【逾期 ${day}天${hour}时${min}分】`, isExpired: true };
++                return `【逾期 ${day}天${hour}时${min}分】`;
+             }
+ 
+             const day = Math.floor(diff / (1000 * 60 * 60 * 24));
+             const hour = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+             const min = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+             const sec = Math.floor((diff % (1000 * 60)) / 1000);
+-            return { text: `剩余 ${day}天${hour}时${min}分${sec}秒`, isExpired: false };
+-        }
+-
+-        // 折叠面板切换
+-        function initCollapsePanels() {
+-            document.querySelectorAll('.collapse-header').forEach(header => {
+-                header.addEventListener('click', () => {
+-                    const targetId = header.dataset.target;
+-                    const content = document.getElementById(targetId);
+-                    const icon = header.querySelector('.collapse-icon');
+-                    
+-                    content.classList.toggle('open');
+-                    icon.classList.toggle('rotated');
+-                });
+-            });
+-        }
+-
+-        // 筛选并排序任务
+-        function filterAndSortTasks() {
+-            const now = Date.now();
+-            
+-            // 有效契约：未完成 + 未过期，按到期时间升序
+-            const validTasks = tasks.filter(task => !task.isFinish && new Date(task.deadline).getTime() > now)
+-                .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+-            
+-            // 过期契约：未完成 + 已过期，按过期时间降序（最新过期的在前）
+-            const expiredTasks = tasks.filter(task => !task.isFinish && new Date(task.deadline).getTime() <= now)
+-                .sort((a, b) => new Date(b.deadline).getTime() - new Date(a.deadline).getTime());
+-            
+-            // 已完成契约：按完成时间逆向排序（最后完成的在前）
+-            const finishedTasks = tasks.filter(task => task.isFinish)
+-                .sort((a, b) => {
+-                    const timeA = a.finishTime || 0;
+-                    const timeB = b.finishTime || 0;
+-                    return timeB - timeA;
+-                });
+-
+-            return { validTasks, expiredTasks, finishedTasks };
+-        }
+-
+-        // 渲染单个任务项
+-        function renderTaskItem(task) {
+-            const countdown = calculateCountdown(task.deadline);
+-            const taskItem = document.createElement('div');
+-            taskItem.className = 'task-item';
+-
+-            taskItem.innerHTML = `
+-                <div class="task-header">
+-                    <span class="task-name">${escapeHtml(task.name)}</span>
+-                    <span class="task-type">${escapeHtml(task.type)}</span>
+-                </div>
+-                <div class="task-info">
+-                    <p>📅 截止期限：<span class="deadline-text">${new Date(task.deadline).toLocaleString()}</span></p>
+-                    <p>⏳ <span class="${countdown.isExpired ? 'task-expire' : 'countdown'}" data-deadline="${escapeHtml(task.deadline)}">${countdown.text}</span></p>
+-                    ${task.finishTime ? `<p>✅ 完成时间：<span class="deadline-text">${new Date(task.finishTime).toLocaleString()}</span></p>` : ''}
+-                    <p>💰 悬赏奖励：${escapeHtml(task.reward)}</p>
+-                    <p>📝 契约详情：${task.description ? escapeHtml(task.description) : '无'}</p>
+-                    <p>状态：<span class="status ${task.isFinish ? 'status-finish' : 'status-unfinish'}">${task.isFinish ? '已猎杀' : '待执行'}</span></p>
+-                </div>
+-                <div class="task-btns">
+-                    <button class="btn btn-warning edit-btn" data-id="${escapeHtml(task.id)}">编辑</button>
+-                    <button class="btn ${task.isFinish ? 'btn-primary' : 'btn-success'} finish-btn" data-id="${escapeHtml(task.id)}">
+-                        ${task.isFinish ? '撤销完成' : '标记完成'}
+-                    </button>
+-                    <button class="btn btn-danger delete-btn" data-id="${escapeHtml(task.id)}">销毁</button>
+-                </div>
+-            `;
+-            return taskItem;
+-        }
+-
+-        // 渲染所有任务面板
+-        function renderTasks() {
+-            const { validTasks, expiredTasks, finishedTasks } = filterAndSortTasks();
+-
+-            // 渲染有效契约
+-            if (validTasks.length === 0) {
+-                validTaskList.innerHTML = '<p class="empty-tip">暂无有效契约，等待发布...</p>';
+-            } else {
+-                validTaskList.innerHTML = '';
+-                validTasks.forEach(task => {
+-                    validTaskList.appendChild(renderTaskItem(task));
+-                });
+-            }
+-
+-            // 渲染过期契约
+-            if (expiredTasks.length === 0) {
+-                expiredTaskList.innerHTML = '<p class="empty-tip">暂无过期契约</p>';
+-            } else {
+-                expiredTaskList.innerHTML = '';
+-                expiredTasks.forEach(task => {
+-                    expiredTaskList.appendChild(renderTaskItem(task));
+-                });
+-            }
+-
+-            // 渲染已完成契约
+-            if (finishedTasks.length === 0) {
+-                finishedTaskList.innerHTML = '<p class="empty-tip">暂无已完成契约</p>';
+-            } else {
+-                finishedTaskList.innerHTML = '';
+-                finishedTasks.forEach(task => {
+-                    finishedTaskList.appendChild(renderTaskItem(task));
+-                });
+-            }
+-
+-            updateStats();
+-        }
+-
+-        // 事件委托：契约按钮统一在 document 上代理，避免每次渲染重复绑定
+-        function handleListClick(event) {
+-            const btn = event.target.closest('button');
+-            if (!btn) return;
+-            const id = btn.dataset.id;
+-            const task = id ? tasks.find(t => t.id === id) : null;
+-
+-            // 编辑按钮
+-            if (btn.classList.contains('edit-btn')) {
+-                if (task) {
+-                    taskId.value = task.id;
+-                    taskName.value = task.name;
+-                    taskType.value = task.type;
+-                    deadline.value = toLocalInputValue(new Date(task.deadline));
+-                    reward.value = task.reward;
+-                    description.value = task.description || '';
+-                    addBtn.style.display = 'none';
+-                    updateBtn.style.display = 'inline-block';
+-                    cancelBtn.style.display = 'inline-block';
+-                }
+-                return;
+-            }
+-
+-            // 完成/撤销按钮
+-            if (btn.classList.contains('finish-btn')) {
+-                if (task) {
+-                    task.isFinish = !task.isFinish;
+-                    // 记录完成时间/清空完成时间
+-                    if (task.isFinish) {
+-                        task.finishTime = Date.now();
+-                        alert(`🩸 猎杀完成！自动领取悬赏：${task.reward}`);
+-                    } else {
+-                        delete task.finishTime;
+-                    }
+-                    saveTasksToLocalStorage();
+-                    renderTasks();
+-                }
+-                return;
+-            }
+-
+-            // 删除按钮
+-            if (btn.classList.contains('delete-btn')) {
+-                if (confirm('确定销毁该契约？')) {
+-                    tasks = tasks.filter(t => t.id !== id);
+-                    saveTasksToLocalStorage();
+-                    renderTasks();
+-                }
+-            }
+-        }
+-
+-        // 生成唯一ID
+-        function generateId() {
+-            return Date.now() + '-' + Math.random().toString(36).slice(2, 11);
++            return `剩余 ${day}天${hour}时${min}分${sec}秒`;
+         }
+ 
+-        // 更新统计信息
+-        function updateStats() {
+-            const now = Date.now();
+-            const finished = tasks.filter(t => t.isFinish).length;
+-            const expired = tasks.filter(t => !t.isFinish && new Date(t.deadline).getTime() <= now).length;
+-            const valid = tasks.filter(t => !t.isFinish && new Date(t.deadline).getTime() > now).length;
+-            
+-            finishCount.textContent = finished;
+-            expiredCount.textContent = expired;
+-            validCount.textContent = valid;
+-            totalCount.textContent = tasks.length;
+-        }
++        function sortTasksByDeadline() {
++            tasks.sort((a, b) => {
++                const timeA = new Date(a.deadline).getTime();
++                const timeB = new Date(b.deadline).getTime();
++                const now = Date.now();
++                
++                const aValid = timeA > now;
++                const bValid = timeB > now;
+ 
+-        // 每秒仅刷新倒计时文本；有契约跨过有效期边界时才整表重渲染
+-        function updateCountdowns() {
+-            let crossed = false;
+-            document.querySelectorAll('[data-deadline]').forEach(span => {
+-                const countdown = calculateCountdown(span.dataset.deadline);
+-                const wasExpired = span.classList.contains('task-expire');
+-                if (wasExpired !== countdown.isExpired) {
+-                    crossed = true;
+-                    return;
+-                }
+-                span.textContent = countdown.text;
++                if (aValid && bValid) return timeA - timeB;
++                if (aValid) return -1;
++                if (bValid) return 1;
++                return timeB - timeA;
+             });
+-            if (crossed) renderTasks();
+         }
+ 
+-        // 保存数据到localStorage
+         function saveTasksToLocalStorage() {
+             localStorage.setItem('contractTasks', JSON.stringify(tasks));
++            updateStats();
+         }
+ 
+-        // 导出JSON
+         function exportJSON() {
+             if (tasks.length === 0) {
+                 alert('暂无契约数据可导出！');
+@@ -767,61 +479,26 @@
+             const url = URL.createObjectURL(blob);
+             const a = document.createElement('a');
+             a.href = url;
+-            a.download = `赏金契约_${new Date().toISOString().slice(0, 10)}.json`;
++            a.download = `赏金契约_${new Date().toLocaleDateString()}.json`;
+             a.click();
+             URL.revokeObjectURL(url);
+             alert('契约存档导出成功！');
+         }
+ 
+-        // 校验并清洗导入数据：字段缺失、日期无法解析的记录直接剔除
+-        function sanitizeImportedTasks(raw) {
+-            if (!Array.isArray(raw)) return null;
+-            const list = [];
+-            raw.forEach(item => {
+-                if (!item || typeof item !== 'object') return;
+-                const { id, name, type, deadline, reward, description, isFinish, finishTime } = item;
+-                if (typeof name !== 'string' || !name.trim()) return;
+-                if (typeof type !== 'string' || !type.trim()) return;
+-                if (typeof reward !== 'string' || !reward.trim()) return;
+-                if (typeof deadline !== 'string' && typeof deadline !== 'number') return;
+-                if (!Number.isFinite(new Date(deadline).getTime())) return;
+-
+-                const task = {
+-                    id: typeof id === 'string' && id ? id : generateId(),
+-                    name,
+-                    type,
+-                    reward,
+-                    description: typeof description === 'string' ? description : '',
+-                    deadline,
+-                    isFinish: isFinish === true
+-                };
+-                if (task.isFinish && Number.isFinite(new Date(finishTime).getTime())) {
+-                    task.finishTime = finishTime;
+-                }
+-                list.push(task);
+-            });
+-            return { list, skipped: raw.length - list.length };
+-        }
+-
+-        // 导入JSON
+         function importJSON(file) {
+             if (!file) return;
+             const reader = new FileReader();
+             reader.onload = (e) => {
+                 try {
+-                    const result = sanitizeImportedTasks(JSON.parse(e.target.result));
+-                    if (!result) {
++                    const importedTasks = JSON.parse(e.target.result);
++                    if (Array.isArray(importedTasks)) {
++                        tasks = importedTasks;
++                        saveTasksToLocalStorage();
++                        renderTasks();
++                        alert('契约数据导入成功！');
++                    } else {
+                         alert('导入失败：文件格式错误（非数组）');
+-                        return;
+-                    }
+-                    if (result.list.length === 0) {
+-                        alert(`导入失败：没有有效的契约数据（跳过 ${result.skipped} 条无效记录）`);
+-                        return;
+                     }
+-                    tasks = result.list;
+-                    saveTasksToLocalStorage();
+-                    renderTasks();
+-                    alert(result.skipped > 0 ? `导入成功 ${result.list.length} 条，跳过 ${result.skipped} 条无效记录` : '契约数据导入成功！');
+                 } catch (err) {
+                     alert('导入失败：文件格式错误');
+                 }
+@@ -829,7 +506,100 @@
+             reader.readAsText(file);
+         }
+ 
+-        // 表单提交（添加/修改）
++        function renderTasks() {
++            sortTasksByDeadline();
++            
++            if (tasks.length === 0) {
++                taskList.innerHTML = '<p style="text-align:center; color:#666;">暂无契约，等待发布...</p>';
++                return;
++            }
++
++            taskList.innerHTML = '';
++            tasks.forEach(task => {
++                const timeStr = calculateCountdown(task.deadline);
++                const isExpired = timeStr.includes('逾期');
++                const taskItem = document.createElement('div');
++                taskItem.className = 'task-item';
++                
++                taskItem.innerHTML = `
++                    <div class="task-header">
++                        <span class="task-name">${task.name}</span>
++                        <span class="task-type">${task.type}</span>
++                    </div>
++                    <div class="task-info">
++                        <p>📅 截止期限：<span class="deadline-text">${new Date(task.deadline).toLocaleString()}</span></p>
++                        <p>⏳ ${isExpired ? `<span class="task-expire">${timeStr}</span>` : `<span class="countdown">${timeStr}</span>`}</p>
++                        <p>💰 悬赏奖励：${task.reward}</p>
++                        <p>📝 契约详情：${task.description || '无'}</p>
++                        <p>状态：<span class="status ${task.isFinish ? 'status-finish' : 'status-unfinish'}">${task.isFinish ? '已猎杀' : '待执行'}</span></p>
++                    </div>
++                    <div class="task-btns">
++                        <button class="btn btn-warning edit-btn" data-id="${task.id}">编辑</button>
++                        <button class="btn ${task.isFinish ? 'btn-primary' : 'btn-success'} finish-btn" data-id="${task.id}">
++                            ${task.isFinish ? '撤销完成' : '标记完成'}
++                        </button>
++                        <button class="btn btn-danger delete-btn" data-id="${task.id}">销毁</button>
++                    </div>
++                `;
++                taskList.appendChild(taskItem);
++            });
++            bindBtnEvents();
++        }
++
++        function bindBtnEvents() {
++            document.querySelectorAll('.edit-btn').forEach(btn => {
++                btn.onclick = () => {
++                    const id = btn.dataset.id;
++                    const task = tasks.find(t => t.id === id);
++                    if (task) {
++                        taskId.value = task.id;
++                        taskName.value = task.name;
++                        taskType.value = task.type;
++                        deadline.value = new Date(task.deadline).toISOString().slice(0, 16);
++                        reward.value = task.reward;
++                        description.value = task.description || '';
++                        addBtn.style.display = 'none';
++                        updateBtn.style.display = 'inline-block';
++                        cancelBtn.style.display = 'inline-block';
++                    }
++                };
++            });
++
++            document.querySelectorAll('.finish-btn').forEach(btn => {
++                btn.onclick = () => {
++                    const id = btn.dataset.id;
++                    const task = tasks.find(t => t.id === id);
++                    if (task) {
++                        task.isFinish = !task.isFinish;
++                        saveTasksToLocalStorage();
++                        renderTasks();
++                        if(task.isFinish) alert(`🩸 猎杀完成！自动领取悬赏：${task.reward}`);
++                    }
++                };
++            });
++
++            document.querySelectorAll('.delete-btn').forEach(btn => {
++                btn.onclick = () => {
++                    const id = btn.dataset.id;
++                    if (confirm('确定销毁该契约？')) {
++                        tasks = tasks.filter(t => t.id !== id);
++                        saveTasksToLocalStorage();
++                        renderTasks();
++                    }
++                };
++            });
++        }
++
++        function generateId() {
++            return Date.now() + '-' + Math.random().toString(36).substr(2, 9);
++        }
++
++        function updateStats() {
++            const finished = tasks.filter(t => t.isFinish).length;
++            finishCount.textContent = finished;
++            totalCount.textContent = tasks.length;
++        }
++
+         taskForm.onsubmit = (e) => {
+             e.preventDefault();
+             const taskData = {
+@@ -844,10 +614,7 @@
+             if (taskId.value) {
+                 const index = tasks.findIndex(t => t.id === taskId.value);
+                 if (index !== -1) {
+-                    // 保留完成时间（如果有）
+-                    const oldFinishTime = tasks[index].finishTime;
+                     tasks[index] = { ...tasks[index], ...taskData };
+-                    if (oldFinishTime) tasks[index].finishTime = oldFinishTime;
+                 }
+             } else {
+                 taskData.id = generateId();
+@@ -863,7 +630,6 @@
+             renderTasks();
+         };
+ 
+-        // 取消编辑
+         cancelBtn.onclick = () => {
+             taskForm.reset();
+             taskId.value = '';
+@@ -872,17 +638,17 @@
+             cancelBtn.style.display = 'none';
+         };
+ 
+-        // 初始化
+-        initCollapsePanels();
+-        document.addEventListener('click', handleListClick);
+         exportBtn.onclick = exportJSON;
++
+         importFile.onchange = (e) => {
+             const file = e.target.files[0];
+             if (file) importJSON(file);
+         };
+-        setInterval(updateCountdowns, 1000);
++
++        setInterval(renderTasks, 1000);
++
+         renderTasks();
+         updateStats();
+     </script>
+ </body>
+-</html>
+\ No newline at end of file
++</html>
