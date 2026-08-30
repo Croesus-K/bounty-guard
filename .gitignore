@@ -10,3 +10,6 @@ coverage/
 
 # 安全扫描插件的工作目录
 .mimosa/
+
+# 文章草稿：首发掘金前暂不入库（本地保留，发布后可回填）
+docs/article-draft.md
