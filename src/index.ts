@@ -18,12 +18,11 @@ import { loadProvider } from './llm/provider.js';
 import { renderMarkdownReport, renderReport, shouldFail, type ReportMeta } from './report.js';
 import { reviewFindings } from './review.js';
 import { scanDiff } from './scanner.js';
-import type { Finding, Severity } from './types.js';
+import { SEVERITIES, type Finding, type Severity } from './types.js';
 
 const require = createRequire(import.meta.url);
 const VERSION: string = require('../package.json').version;
 
-const SEVERITIES: readonly Severity[] = ['high', 'medium', 'low', 'info'];
 const USAGE_HINT = '请指定扫描来源：--git（扫描未提交变更）或 --diff <file>（扫描 diff 文件）';
 
 /** 用法类错误：输出友好提示并以退出码 2 结束 */

@@ -75,12 +75,34 @@ export async function upsertStickyComment(
   return 'created';
 }
 
-/** 生成 Actions 告警标注（高危/中危 error，低危及以下 warning） */
+/** 每步标注上限：GitHub 仅接受 10 条 error + 10 条 warning，超出部分被静默丢弃 */
+const ANNOTATION_CAP = 10;
+
+/** 生成 Actions 告警标注（高危/中危 error，低危及以下 warning）。
+ * 超出上限时保留前 9 条、第 10 条用作汇总，确保溢出信息可见而不是被吞掉。 */
 export function toAnnotations(findings: Finding[]): string[] {
-  return findings.map((f) => {
-    const level = f.severity === 'high' || f.severity === 'medium' ? 'error' : 'warning';
-    return `::${level} file=${f.file},line=${f.line}::[${LABELS[f.severity]}] ${f.ruleId}：${f.message}`;
-  });
+  const lines: string[] = [];
+  const emit = (list: Finding[], level: 'error' | 'warning', scope: string) => {
+    const head = list.slice(0, ANNOTATION_CAP - 1);
+    const dropped = list.length - head.length;
+    for (const f of head) {
+      lines.push(`::${level} file=${f.file},line=${f.line}::[${LABELS[f.severity]}] ${f.ruleId}：${f.message}`);
+    }
+    if (dropped > 0) {
+      lines.push(`::${level} title=bounty-guard::另有 ${dropped} 条${scope}告警未展示，完整列表见 PR 评论`);
+    }
+  };
+  emit(
+    findings.filter((f) => f.severity === 'high' || f.severity === 'medium'),
+    'error',
+    '高危/中危'
+  );
+  emit(
+    findings.filter((f) => f.severity === 'low' || f.severity === 'info'),
+    'warning',
+    '低危/提示'
+  );
+  return lines;
 }
 
 /** Job Summary 暂存文件名（工作目录下固定文件，由 Action 步骤追加到 $GITHUB_STEP_SUMMARY） */

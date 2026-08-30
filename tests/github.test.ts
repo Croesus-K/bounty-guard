@@ -77,6 +77,25 @@ describe('toAnnotations', () => {
     expect(lines[0]).toContain('[高危] xss-inner-html');
     expect(lines[1]).toContain('::warning file=src/a.js,line=3::');
   });
+
+  it('不超上限时逐条输出', () => {
+    expect(toAnnotations([finding('high'), finding('low')])).toHaveLength(2);
+  });
+
+  it('超出每步上限时截断为 9+汇总，不被 GitHub 静默吞掉', () => {
+    const many = Array.from({ length: 12 }, () => finding('high'));
+    const lines = toAnnotations(many);
+    expect(lines.filter((l) => l.startsWith('::error'))).toHaveLength(10);
+    expect(lines.at(-1)).toContain('另有 3 条高危/中危告警未展示');
+  });
+
+  it('error 与 warning 分别计数', () => {
+    const many = Array.from({ length: 11 }, () => finding('high')).concat([finding('low')]);
+    const lines = toAnnotations(many);
+    expect(lines.filter((l) => l.startsWith('::error'))).toHaveLength(10);
+    expect(lines.filter((l) => l.startsWith('::warning'))).toHaveLength(1);
+    expect(lines.filter((l) => l.includes('另有 2 条高危/中危告警未展示'))).toHaveLength(1);
+  });
 });
 
 describe('resolvePrNumber', () => {

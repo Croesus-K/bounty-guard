@@ -1,5 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { SEVERITIES } from './types.js';
 import type { Severity } from './types.js';
+
+/** ai.provider 的合法值清单 */
+const AI_PROVIDERS: readonly string[] = ['openai-compatible', 'mock', 'off'];
 
 export interface AiConfig {
   enabled: boolean;
@@ -22,7 +26,8 @@ export const DEFAULT_CONFIG: BountyConfig = {
   ai: { enabled: false, provider: 'off' }
 };
 
-/** 读取并合并 .bountyrc.json；无文件返回默认配置，文件损坏给出明确错误 */
+/** 读取并合并 .bountyrc.json；无文件返回默认配置，文件损坏或门禁配置非法时给出明确错误。
+ * 门禁类配置宁可在加载时失败，也绝不静默失效——failOn 写错却照常放行是安全工具的大忌。 */
 export function loadConfig(cwd: string = process.cwd()): BountyConfig {
   const path = `${cwd}/.bountyrc.json`;
   if (!existsSync(path)) return DEFAULT_CONFIG;
@@ -32,9 +37,20 @@ export function loadConfig(cwd: string = process.cwd()): BountyConfig {
   } catch {
     throw new Error(`配置文件解析失败：${path}`);
   }
-  return {
+  const merged = {
     ...DEFAULT_CONFIG,
     ...raw,
     ai: { ...DEFAULT_CONFIG.ai, ...(raw.ai ?? {}) }
   } as BountyConfig;
+  if (!(SEVERITIES as readonly string[]).includes(merged.failOn)) {
+    throw new Error(
+      `配置文件 failOn 取值无效：${String(merged.failOn)}（可选 ${SEVERITIES.join(' | ')}）`
+    );
+  }
+  if (!AI_PROVIDERS.includes(merged.ai.provider)) {
+    throw new Error(
+      `配置文件 ai.provider 取值无效：${String(merged.ai.provider)}（可选 ${AI_PROVIDERS.join(' | ')}）`
+    );
+  }
+  return merged;
 }

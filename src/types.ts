@@ -6,6 +6,9 @@
 
 export type Severity = 'high' | 'medium' | 'low' | 'info';
 
+/** 合法严重度清单（配置校验与 CLI 参数共用） */
+export const SEVERITIES: readonly Severity[] = ['high', 'medium', 'low', 'info'];
+
 /** 严重度排序：info < low < medium < high（门禁判定与降级约束的统一基准） */
 export const SEVERITY_RANK: Record<Severity, number> = { info: 0, low: 1, medium: 2, high: 3 };
 

@@ -104,7 +104,7 @@ GitHub Action（薄壳）──┘
 - [x] README 完善（含误报率数据、靶场 demo 链接）
 - [x] v0.1.0 tag（npm 发布待凭据：`npm login` 后 `npm publish`，files/prepublishOnly 已配好）
 - [x] 热门开源项目公开 PR 离线试扫（`scripts/scan-prs.ts`，9 个真实 PR 样例）
-- [x] 掘金 / HelloGitHub 发文草稿（`docs/article-draft.md`，定稿与发布由作者执行）
+- [x] 掘金 / HelloGitHub 发文草稿（已完成；草稿暂存本地不入库，掘金首发后再回填仓库）
 
 ### Week 4 验收记录（2026-08-31）
 

@@ -38,4 +38,14 @@ describe('loadConfig', () => {
     writeFileSync(join(dir, '.bountyrc.json'), '{bad json');
     expect(() => loadConfig(dir)).toThrow(/解析失败/);
   });
+
+  it('failOn 非法值在加载时抛错，杜绝门禁静默失效', () => {
+    writeFileSync(join(dir, '.bountyrc.json'), JSON.stringify({ failOn: 'high ' }));
+    expect(() => loadConfig(dir)).toThrow(/failOn 取值无效/);
+  });
+
+  it('ai.provider 非法值在加载时抛错', () => {
+    writeFileSync(join(dir, '.bountyrc.json'), JSON.stringify({ ai: { enabled: true, provider: 'chatgpt' } }));
+    expect(() => loadConfig(dir)).toThrow(/ai\.provider 取值无效/);
+  });
 });

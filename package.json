@@ -10,6 +10,14 @@
   "bin": {
     "bounty-guard": "./dist/index.js"
   },
+  "homepage": "https://github.com/Croesus-K/bounty-guard#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Croesus-K/bounty-guard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Croesus-K/bounty-guard/issues"
+  },
   "keywords": [
     "security",
     "code-review",
