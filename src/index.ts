@@ -6,7 +6,9 @@ import { Command } from 'commander';
 import { loadConfig } from './config.js';
 import { parseDiff, unquoteGitPath, type DiffLine, type ParsedDiff, type ParsedFile } from './diff.js';
 import { matchGlob } from './glob.js';
-import { renderReport, shouldFail } from './report.js';
+import { loadProvider } from './llm/provider.js';
+import { renderReport, shouldFail, type ReportMeta } from './report.js';
+import { reviewFindings } from './review.js';
 import { scanDiff } from './scanner.js';
 import type { Severity } from './types.js';
 
@@ -87,7 +89,7 @@ program
   .description('扫描代码变更中的安全问题（规则初筛；LLM 复核 Week 2 接入）')
   .option('--git', '扫描当前仓库的未提交变更')
   .option('--diff <file>', '从 unified diff 文件扫描')
-  .option('--ai', '启用 LLM 复核（Week 2 上线；当前自动降级为纯规则模式）')
+  .option('--ai', '启用 LLM 复核（无 API Key 时自动降级为纯规则模式）')
   .option('--fail-on <severity>', '门禁等级：high | medium | low | info（覆盖配置文件）')
   .action(async (options: { git?: boolean; diff?: string; ai?: boolean; failOn?: string }) => {
     if (!options.git && !options.diff) {
@@ -110,10 +112,6 @@ program
       }
       failOn = options.failOn as Severity;
     }
-    if (options.ai) {
-      console.log('ℹ️ LLM 复核将在 Week 2 上线，本次为纯规则模式\n');
-    }
-
     const cwd = process.cwd();
     let diff: ParsedDiff;
     let source: string;
@@ -131,14 +129,42 @@ program
       return;
     }
 
-    const findings = scanDiff(diff, { ignore: config.ignore });
+    let findings = scanDiff(diff, { ignore: config.ignore });
     const scannable = diff.files.filter((f) => !f.isBinary && !matchGlob(f.path, config.ignore));
     const addedLines = scannable.reduce(
       (sum, f) => sum + f.hunks.reduce((n, h) => n + h.lines.filter((l) => l.type === 'add').length, 0),
       0
     );
 
-    console.log(renderReport(findings, { source, scannedFiles: scannable.length, addedLines }));
+    // LLM 复核：--ai 或配置启用；无 Key 等条件不满足时自动降级为纯规则模式
+    let review: ReportMeta['review'];
+    if (options.ai || config.ai.enabled) {
+      const effective = options.ai
+        ? {
+            ...config,
+            ai: {
+              ...config.ai,
+              enabled: true,
+              provider: config.ai.provider === 'off' ? ('openai-compatible' as const) : config.ai.provider
+            }
+          }
+        : config;
+      const loaded = loadProvider(effective);
+      if (loaded.degraded) {
+        console.log(`ℹ️ ${loaded.reason}\n`);
+      } else {
+        const outcome = await reviewFindings(findings, loaded.provider);
+        findings = outcome.findings;
+        review = {
+          provider: loaded.provider.name,
+          confirmed: outcome.findings.length,
+          filtered: outcome.filtered,
+          downgraded: outcome.downgraded
+        };
+      }
+    }
+
+    console.log(renderReport(findings, { source, scannedFiles: scannable.length, addedLines, review }));
     process.exitCode = shouldFail(findings, failOn) ? 1 : 0;
   });
 

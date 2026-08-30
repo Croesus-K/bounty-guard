@@ -51,6 +51,29 @@ describe('renderReport', () => {
     expect(text).toContain('[低危]');
     expect(text).toContain('[提示]');
   });
+
+  it('复核结果参与渲染：汇总行、下调标注与 LLM 修复建议优先', () => {
+    const f = finding('medium');
+    f.review = { verdict: 'confirmed', severity: 'low', explanation: '影响有限', fixSuggestion: '改用参数化查询' };
+    const text = renderReport([f], {
+      source: 's',
+      scannedFiles: 1,
+      addedLines: 1,
+      review: { provider: 'openai-compatible:test-model', confirmed: 1, filtered: 2, downgraded: 1 }
+    });
+    expect(text).toContain('LLM 复核（openai-compatible:test-model）');
+    expect(text).toContain('确认 1 · 误报过滤 2 · 严重度下调 1');
+    expect(text).toContain('严重度经复核下调');
+    expect(text).toContain('💡 修复建议（复核）：改用参数化查询');
+  });
+
+  it('未确证告警标注保留原判，无 LLM 建议时回退规则提示', () => {
+    const f = finding('high');
+    f.review = { verdict: 'unsure', explanation: '证据不足' };
+    const text = renderReport([f], { source: 's', scannedFiles: 1, addedLines: 1 });
+    expect(text).toContain('LLM 未能确证，保留原判');
+    expect(text).toContain('💡 建议');
+  });
 });
 
 describe('shouldFail', () => {

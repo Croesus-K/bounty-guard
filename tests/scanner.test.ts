@@ -71,7 +71,7 @@ describe('scanDiff', () => {
     expect(scanDiff(diff, { ignore: [], rules: [ruleBad] })).toHaveLength(0);
   });
 
-  it('新增行命中时字段完整（文件/行号/片段/严重度/建议）', () => {
+  it('新增行命中时字段完整（文件/行号/片段/严重度/建议/上下文）', () => {
     const diff = singleFileDiff([
       ['context', 'const a = 1;'],
       ['add', 'badCall();']
@@ -87,6 +87,7 @@ describe('scanDiff', () => {
       message: '命中 badCall',
       fixHint: '修复 badCall'
     });
+    expect(findings[0].contextLines).toEqual(['const a = 1;']);
   });
 
   it('ignore 命中的文件整体跳过', () => {

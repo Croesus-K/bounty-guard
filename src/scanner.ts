@@ -55,7 +55,8 @@ export function scanDiff(diff: ParsedDiff, options: ScanOptions): Finding[] {
             line: line.newLine,
             snippet: line.content,
             message: rule.message,
-            fixHint: rule.fixHint
+            fixHint: rule.fixHint,
+            contextLines: ctx.context
           });
         }
       }

@@ -1,6 +1,7 @@
 /**
  * 终端报告渲染与 CI 门禁判定。
  */
+import { SEVERITY_RANK } from './types.js';
 import type { Finding, Severity } from './types.js';
 
 /** 各严重度的中文标签 */
@@ -11,13 +12,10 @@ const LABELS: Record<Severity, string> = {
   info: '提示'
 };
 
-/** 严重度排序：info < low < medium < high */
-const RANK: Record<Severity, number> = { info: 0, low: 1, medium: 2, high: 3 };
-
 /** CI 门禁：任一告警达到 failOn 档即应非零退出 */
 export function shouldFail(findings: Finding[], failOn: Severity): boolean {
-  const threshold = RANK[failOn];
-  return findings.some((f) => RANK[f.severity] >= threshold);
+  const threshold = SEVERITY_RANK[failOn];
+  return findings.some((f) => SEVERITY_RANK[f.severity] >= threshold);
 }
 
 export interface ReportMeta {
@@ -25,6 +23,8 @@ export interface ReportMeta {
   source: string;
   scannedFiles: number;
   addedLines: number;
+  /** LLM 复核汇总（未开启复核时缺省） */
+  review?: { provider: string; confirmed: number; filtered: number; downgraded: number };
 }
 
 /** 渲染中文终端报告，按文件分组 */
@@ -32,6 +32,11 @@ export function renderReport(findings: Finding[], meta: ReportMeta): string {
   const out: string[] = [];
   out.push('bounty-guard 扫描报告');
   out.push(`来源：${meta.source} ｜ 扫描文件 ${meta.scannedFiles} 个 ｜ 新增行 ${meta.addedLines} 行`);
+  if (meta.review) {
+    out.push(
+      `LLM 复核（${meta.review.provider}）：确认 ${meta.review.confirmed} · 误报过滤 ${meta.review.filtered} · 严重度下调 ${meta.review.downgraded}`
+    );
+  }
   out.push('');
 
   if (findings.length === 0) {
@@ -46,10 +51,18 @@ export function renderReport(findings: Finding[], meta: ReportMeta): string {
     for (const [file, list] of byFile) {
       out.push(file);
       for (const f of list) {
-        out.push(`  [${LABELS[f.severity]}] ${f.ruleId} · 第 ${f.line} 行`);
+        const suffix = f.review
+          ? f.review.verdict === 'unsure'
+            ? ' · LLM 未能确证，保留原判'
+            : f.review.severity
+              ? ' · 严重度经复核下调'
+              : ''
+          : '';
+        out.push(`  [${LABELS[f.severity]}] ${f.ruleId} · 第 ${f.line} 行${suffix}`);
         out.push(`    ${f.snippet.trim()}`);
         out.push(`    ⚠ ${f.message}`);
-        if (f.fixHint) out.push(`    💡 ${f.fixHint}`);
+        if (f.review?.fixSuggestion) out.push(`    💡 修复建议（复核）：${f.review.fixSuggestion}`);
+        else if (f.fixHint) out.push(`    💡 ${f.fixHint}`);
       }
       out.push('');
     }
