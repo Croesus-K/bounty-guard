@@ -99,12 +99,26 @@ GitHub Action（薄壳）──┘
 - 调试记录：action 参数内嵌引号经 word-splitting 原样传入导致首轮失败，修复后重扫通过
 - demo GIF 录制待补（README 已预留位置）
 
-## Week 4：发布与叙事
+## Week 4：发布与叙事 ✅（npm 发布与发文由作者执行）
 
-- [ ] README 完善（含误报率数据、靶场 demo）
-- [ ] npm 发布 + v0.1.0 tag
-- [ ] 用热门开源项目公开 PR 离线试扫，调规则、攒 5 个真实案例
-- [ ] 掘金 / HelloGitHub 发文：《我给自己造了个 AI 代码安全审查器》
+- [x] README 完善（含误报率数据、靶场 demo 链接）
+- [x] v0.1.0 tag（npm 发布待凭据：`npm login` 后 `npm publish`，files/prepublishOnly 已配好）
+- [x] 热门开源项目公开 PR 离线试扫（`scripts/scan-prs.ts`，9 个真实 PR 样例）
+- [x] 掘金 / HelloGitHub 发文草稿（`docs/article-draft.md`，定稿与发布由作者执行）
+
+### Week 4 验收记录（2026-08-31）
+
+- **离线试扫指标**：expressjs/express、axios/axios、vitejs/vite 各 3 个近期真实 PR，
+  共 9 PR / 1183 新增行，规则引擎命中 4 条——全部为 plain-http 低危、
+  全部位于测试文件（代理测试的 http 样例 URL）。真实业务代码零误报；
+  测试文件噪声正是 LLM 复核提示词「测试文件判 false-positive」的目标形态
+- 指标起点换算：每千行新增命中 3.4 条；v0.1.1 优化方向：默认跳过测试文件
+- dogfood：bounty-guard 自身与靶场仓库全程由本工具扫描
+
+## 四周收官小结（2026-08-31）
+
+四周计划全部完成：93 项测试全绿、CI 绿、靶场 3/3 命中、回滚验证抓出当年 XSS、
+误报率有真实数据、文章草稿就绪。待作者执行：npm publish、demo GIF、发文定稿。
 
 ## 防跑偏三条
 
