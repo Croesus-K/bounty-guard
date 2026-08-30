@@ -14,6 +14,8 @@ export interface Finding {
   snippet: string;
   message: string;
   fixHint?: string;
+  /** Week 2 起 LLM 复核结果挂载点，纯规则模式不填——LLM 只复核已有告警、不发明发现 */
+  review?: LLMReviewResult;
 }
 
 export interface LLMReviewRequest {
