@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+
+# 本地会话笔记（不入库）
+111.md
+
+# 安全扫描插件的工作目录
+.mimosa/

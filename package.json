@@ -1,0 +1,35 @@
+{
+  "name": "bounty-guard",
+  "version": "0.1.0",
+  "description": "AI 代码安全审查助手 —— 规则引擎初筛 + LLM 复核，守住每一行 diff",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "bounty-guard": "./dist/index.js"
+  },
+  "keywords": [
+    "security",
+    "code-review",
+    "static-analysis",
+    "llm",
+    "github-action"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
