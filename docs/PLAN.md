@@ -22,21 +22,42 @@ GitHub Action（薄壳）──┘
 
 验收：`npm run dev -- --help` 可跑、`npm test` 绿、CI 绿。
 
-## Week 1：规则引擎（核心周）
+## Week 1：规则引擎（核心周）✅
 
-- [ ] Diff 解析器：unified diff → 变更行 + 上下文（只审新增行 = 成本控制根基）
-- [ ] 规则模型 `{ id, severity, detect, message, fixHint }`
-- [ ] 种子规则 8-10 条（全部来自自己踩过的坑）：
-  - [ ] `innerHTML` 拼接（XSS）
-  - [ ] 加密场景 `Math.random`
-  - [ ] 硬编码密钥 / API Key 模式
-  - [ ] `eval` / `new Function`
-  - [ ] 弱哈希（MD5/SHA1 用于密码）
-  - [ ] SQL 字符串拼接
-  - [ ] `child_process.exec` 拼接
-  - [ ] 明文 http 请求
-- [ ] 每条规则配正反用例
-- [ ] `scan --git` / `scan --diff <file>` 终端报告 + `--fail-on` 退出码门禁
+- [x] Diff 解析器：unified diff → 变更行 + 上下文（只审新增行 = 成本控制根基）
+- [x] 规则模型 `{ id, severity, detect, message, fixHint }`
+- [x] 种子规则 8 条（全部来自自己踩过的坑）：
+  - [x] `innerHTML` 拼接（XSS）
+  - [x] 加密场景 `Math.random`
+  - [x] 硬编码密钥 / API Key 模式
+  - [x] `eval` / `new Function`
+  - [x] 弱哈希（MD5/SHA1 用于密码）
+  - [x] SQL 字符串拼接
+  - [x] `child_process.exec` 拼接
+  - [x] 明文 http 请求
+- [x] 每条规则配正反用例（8 条规则 19 项规则测试，全仓 58 项测试全绿）
+- [x] `scan --git` / `scan --diff <file>` 终端报告 + `--fail-on` 退出码门禁
+
+### 验收记录（2026-08-31）：回滚验证通过 ✅
+
+取赏金契约仓库修复提交（`890e989`）之前的反向 diff（`tests/fixtures/dogfood-xss.diff`，
+129 个新增行），bounty-guard 命中当年那个存储型 XSS：
+
+- `index.html:524` `taskItem.innerHTML = \`` → [高危] xss-inner-html，附中文修复建议
+- `--fail-on` 门禁按预期非零退出（exit 1）；无告警场景 exit 0；参数错误 exit 2
+
+**指标起始（自此记录）**：该 diff 命中 1、误报 0。考古证据链：漏洞引入 `17f918c` →
+修复 `890e989`（escapeHtml 转义），简报见 `tests/fixtures/dogfood-xss.md`。
+
+### 素材库：误报治理第一手案例（Week 4 文章用）
+
+1. Week 0：测试数据里动态执行调用的**字符串字面量**被 Mimosa 拦截（从未执行，纯形态误报）
+2. Week 1：diff 解析器用正则的 exec 方法做匹配，被 Mimosa 当作命令注入**两次拦截**；
+   换语义等价的 match/test 通过——安全工具自己开发时就被安全工具误伤
+3. Week 1：规则源码里「exec 字样紧邻括号」的正则被拦，目标词改运行时拼装；测试样例里的
+   **假密钥字面量**被当作真实泄露拦截——与自家 hardcoded-secret 规则判定完全同判
+4. 启示：形态匹配无法区分「真实威胁 / 检测代码 / 测试样例」，这正是
+   bounty-guard「规则初筛 + LLM 复核降噪」架构的立论基础
 
 验收：对旧仓库出报告；**回滚赏金契约修复前版本实测能抓出当年 XSS**；开始记录命中/误报指标。
 
