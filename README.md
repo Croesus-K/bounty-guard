@@ -147,7 +147,7 @@ Action 会：读取 PR diff → 规则初筛 →（可选）LLM 复核 → 发�
 ```bash
 npm ci
 npm run dev -- scan --git   # 本地跑 CLI
-npm test                     # 122 项测试
+npm test                     # 142 项测试
 npm run lint                 # tsc --noEmit
 ```
 

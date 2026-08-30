@@ -176,6 +176,16 @@ GitHub Action（薄壳）──┘
 **验收**：133 项测试全绿（新增 11 项）；doctor 实测四项通过；
 首份 docs/metrics.md 已生成（9 PR / 1298 行 / 0 命中）。
 
+## v0.1.6：多语言第一步——Python 子集（2026-08-31）
+
+- [x] 新增 src/rules/python.ts：py-dangerous-eval / py-weak-hash-password /
+  py-sql-concat / py-hardcoded-secret，共 4 条，仅在 .py 文件激活
+- [x] 豁免形态齐备：literal_eval / 参数化查询 / os.environ / # 注释剔除
+- [x] 注册表合并：ALL_RULES = JS 种子 10 + Python 4 = 14 条，扫描管线零改动
+
+**验收**：142 项测试全绿（新增 9 项）。多语言策略：管线语言无关，规则按扩展名守卫；
+后续语言（Go/Java）与 Python 深水区（pickle 反序列化、subprocess shell=True）按此模式扩展。
+
 ## v0.1.3：表达力批次（2026-08-31）
 
 - [x] 行内豁免注释：命中行含 `// bounty-guard-ignore` 即跳过
