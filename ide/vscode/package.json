@@ -1,0 +1,49 @@
+{
+  "name": "bounty-guard-vscode",
+  "displayName": "bounty-guard",
+  "description": "AI 代码安全审查助手 —— 在编辑器里实时呈现 bounty-guard 的扫描发现",
+  "publisher": "Croesus-K",
+  "version": "0.2.0",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Security"
+  ],
+  "activationEvents": [
+    "onCommand:bounty-guard.scan"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bounty-guard.scan",
+        "title": "bounty-guard：扫描当前仓库变更",
+        "category": "bounty-guard"
+      }
+    ],
+    "configuration": {
+      "title": "bounty-guard",
+      "properties": {
+        "bounty-guard.cliPath": {
+          "type": "string",
+          "default": "bounty-guard",
+          "description": "bounty-guard 可执行文件路径（全局安装后的命令，或 node + 脚本的封装）"
+        },
+        "bounty-guard.scanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "保存文件时自动扫描工作区未提交变更"
+        },
+        "bounty-guard.failOn": {
+          "type": "string",
+          "default": "info",
+          "enum": ["high", "medium", "low", "info"],
+          "description": "纳入诊断面板的最低严重度"
+        }
+      }
+    }
+  }
+}

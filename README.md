@@ -16,6 +16,8 @@ CLI（npm 包）──────────┐
 GitHub Action（薄壳）──┘
 ```
 
+同一引擎，**五种使用形态**：CLI / GitHub Action / pre-commit 钩子 / MCP Server（AI 助手接入）/ VS Code 扩展（另有 GitHub App 自托管服务器，见下文）。
+
 - **只审新增行**——成本控制的根基，也是"守住每一行 diff"的字面含义
 - **LLM 永远只复核、不发明**——每条告警必须挂在真实代码行上、有规则命中佐证（防幻觉根基）
 - **无 API Key 优雅降级**——纯规则模式完整可用，CI 里零成本跑
@@ -69,6 +71,32 @@ BOUNTY_GUARD_SKIP=1 git commit # 临时跳过一次钩子
 `scripts/weekly-report.ts` + 定时任务每周五自动扫描 `scripts/metrics-prs.txt` 清单里的真实 PR，
 生成 [docs/metrics.md](docs/metrics.md) 并自动提交——**持续更新的真实误报率仪表盘**，
 也可本地手动触发：`GITHUB_TOKEN=xxx npx tsx scripts/weekly-report.ts`。
+
+### MCP Server（给 AI 编程助手用）
+
+把 bounty-guard 作为 MCP 工具暴露给 ZCode / Cursor / Claude Code 等 agent——在写码瞬间调用扫描：
+
+```json
+{ "mcpServers": { "bounty-guard": { "command": "npx", "args": ["-y", "bounty-guard", "mcp"] } } }
+```
+
+工具：`scan_git`（未提交/暂存变更）、`scan_diff`（diff 文本）、`list_rules`（规则清单）、`doctor`（配置摘要）。零依赖实现，协议 2024-11-05。
+
+### GitHub App（自托管服务器）
+
+比 composite action 更实时、支持私有仓库、一次安装多仓库复用：
+
+```bash
+BG_APP_ID=1 BG_PRIVATE_KEY="$(cat app-key.pem)" BG_WEBHOOK_SECRET=*** BG_PORT=8080 \
+  npx bounty-guard gh-app
+```
+
+注册 App（Webhook URL → `https://<host>/api/github/webhook`，订阅 Pull requests，权限 Pull requests: Read & write）后，
+服务器自动验签 → 换 installation token → 扫描 PR → 粘性评论。
+
+### VS Code 扩展
+
+`ide/vscode/`：诊断面板 + 编辑器内波浪线，保存自动刷新，零依赖纯 JS。调试与打包见 [ide/vscode/README.md](ide/vscode/README.md)。
 
 ### GitHub Action
 

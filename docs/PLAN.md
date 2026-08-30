@@ -217,6 +217,19 @@ GitHub Action（薄壳）──┘
 - [ ] 素材库颗粒化：五连拦案例拆系列短内容，预热掘金长文
 - [ ] 对比评测：vs Semgrep / CodeQL 同批 PR 横评
 
+## v0.2.0-m1：三种形态拓展（2026-08-31）—— v0.2 路线图 ① 落地
+
+- [x] **MCP Server**：`bounty-guard mcp` stdio JSON-RPC（零依赖实现，协议 2024-11-05），
+  工具 scan_git / scan_diff / list_rules / doctor，协议与工具全测试覆盖
+- [x] **GitHub App 自托管服务器**：`bounty-guard gh-app`——webhook 验签（HMAC + 常数时间比较）、
+  App JWT（RS256）、installation token 交换、PR 自动扫描 + 粘性评论；README 附注册与部署指引
+- [x] **VS Code 扩展**（ide/vscode）：Diagnostics 面板 + 编辑器内波浪线，保存自动刷新，零依赖纯 JS
+- [x] 重构：git 扫描采集层抽离 src/git-scan.ts，CLI / MCP / App 三形态共用
+- [x] 版本 0.2.0
+
+**验收**：152 项测试全绿（新增 19 项）。三形态后续：MCP 待 agent 用户实测；
+GitHub App 需注册 App 并择机托管；VS Code 扩展待 vsce 打包上架。
+
 ## v0.1.3：表达力批次（2026-08-31）
 
 - [x] 行内豁免注释：命中行含 `// bounty-guard-ignore` 即跳过
