@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderReport, shouldFail } from '../src/report.js';
+import { renderMarkdownReport, renderReport, shouldFail } from '../src/report.js';
 import type { Finding, Severity } from '../src/types.js';
 
 function finding(severity: Severity, file = 'src/a.js', line = 3): Finding {
@@ -73,6 +73,37 @@ describe('renderReport', () => {
     const text = renderReport([f], { source: 's', scannedFiles: 1, addedLines: 1 });
     expect(text).toContain('LLM 未能确证，保留原判');
     expect(text).toContain('💡 建议');
+  });
+});
+
+describe('renderMarkdownReport', () => {
+  it('包含标题、统计、发现详情与粘性标记', () => {
+    const f = finding('high');
+    f.review = { verdict: 'confirmed', severity: 'medium', explanation: '影响可控', fixSuggestion: '改用 textContent' };
+    const text = renderMarkdownReport([f], {
+      source: 'PR #7（o/r）',
+      scannedFiles: 2,
+      addedLines: 9,
+      review: { provider: 'openai-compatible:m', confirmed: 1, filtered: 1, downgraded: 1 }
+    });
+    expect(text).toContain('## 🛡 bounty-guard 扫描报告');
+    expect(text).toContain('PR #7（o/r）');
+    expect(text).toContain('**LLM 复核（openai-compatible:m）**：确认 1 · 误报过滤 1 · 严重度下调 1');
+    expect(text).toContain('🔴 `src/a.js:3`');
+    expect(text).toContain('```javascript');
+    expect(text).toContain('const x = bad();');
+    expect(text).toContain('- 💡 复核建议：改用 textContent');
+    expect(text).toContain('粘性评论');
+    expect(text).toContain('<!-- bounty-guard-report -->');
+  });
+
+  it('无告警时输出未发现问题；片段含围栏时升级为四反引号', () => {
+    const empty = renderMarkdownReport([], { source: 's', scannedFiles: 1, addedLines: 1 });
+    expect(empty).toContain('✅ **未发现安全问题**');
+    const f = finding('low');
+    f.snippet = 'const s = ```; // 含围栏的行';
+    const text = renderMarkdownReport([f], { source: 's', scannedFiles: 1, addedLines: 1 });
+    expect(text).toContain('````');
   });
 });
 

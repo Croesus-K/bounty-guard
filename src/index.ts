@@ -3,14 +3,22 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { Command } from 'commander';
+import type { BountyConfig } from './config.js';
 import { loadConfig } from './config.js';
 import { parseDiff, unquoteGitPath, type DiffLine, type ParsedDiff, type ParsedFile } from './diff.js';
+import {
+  fetchPrDiff,
+  resolvePrNumber,
+  toAnnotations,
+  upsertStickyComment,
+  writeSummaryFile
+} from './github.js';
 import { matchGlob } from './glob.js';
 import { loadProvider } from './llm/provider.js';
-import { renderReport, shouldFail, type ReportMeta } from './report.js';
+import { renderMarkdownReport, renderReport, shouldFail, type ReportMeta } from './report.js';
 import { reviewFindings } from './review.js';
 import { scanDiff } from './scanner.js';
-import type { Severity } from './types.js';
+import type { Finding, Severity } from './types.js';
 
 const require = createRequire(import.meta.url);
 const VERSION: string = require('../package.json').version;
@@ -18,9 +26,21 @@ const VERSION: string = require('../package.json').version;
 const SEVERITIES: readonly Severity[] = ['high', 'medium', 'low', 'info'];
 const USAGE_HINT = '请指定扫描来源：--git（扫描未提交变更）或 --diff <file>（扫描 diff 文件）';
 
+/** 用法类错误：输出友好提示并以退出码 2 结束 */
+class UsageError extends Error {}
+
+/** 校验 --fail-on 取值；无值时回退配置文件 */
+function resolveFailOn(config: BountyConfig, value?: string): Severity {
+  if (!value) return config.failOn;
+  if (!(SEVERITIES as readonly string[]).includes(value)) {
+    throw new UsageError(`--fail-on 取值无效：${value}（可选 ${SEVERITIES.join(' | ')}）`);
+  }
+  return value as Severity;
+}
+
 /** 以子进程运行 git（参数列表形式，不经 shell），非零退出时以 stderr 文本抛错 */
 function runGit(args: string[], cwd: string): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolvePromise, reject) => {
     const child = spawn('git', args, { cwd });
     let stdout = '';
     let stderr = '';
@@ -32,7 +52,7 @@ function runGit(args: string[], cwd: string): Promise<string> {
     });
     child.on('error', reject);
     child.on('close', (code) => {
-      if (code === 0) resolve(stdout);
+      if (code === 0) resolvePromise(stdout);
       else reject(new Error(stderr.trim() || `git 以退出码 ${code ?? '未知'} 异常结束`));
     });
   });
@@ -77,6 +97,52 @@ async function collectGitChanges(cwd: string): Promise<ParsedDiff> {
   return parsed;
 }
 
+interface ScanOutcome {
+  findings: Finding[];
+  scannedFiles: number;
+  addedLines: number;
+  review?: ReportMeta['review'];
+}
+
+/** 解析并扫描 diff，按需执行 LLM 复核（scan 与 pr-comment 共用）。
+ * upgradeOff：--ai 显式启用时把 provider=off 升级为 openai-compatible；
+ * 仅配置启用时保持用户配置（off 仍是纯规则）。 */
+async function scanAndReview(
+  diff: ParsedDiff,
+  config: BountyConfig,
+  wantAi: boolean,
+  upgradeOff: boolean
+): Promise<ScanOutcome> {
+  let findings = scanDiff(diff, { ignore: config.ignore });
+  const scannable = diff.files.filter((f) => !f.isBinary && !matchGlob(f.path, config.ignore));
+  const addedLines = scannable.reduce(
+    (sum, f) => sum + f.hunks.reduce((n, h) => n + h.lines.filter((l) => l.type === 'add').length, 0),
+    0
+  );
+
+  let review: ReportMeta['review'];
+  if (wantAi) {
+    const effective =
+      upgradeOff && config.ai.provider === 'off'
+        ? { ...config, ai: { ...config.ai, enabled: true, provider: 'openai-compatible' as const } }
+        : config;
+    const loaded = loadProvider(effective);
+    if (loaded.degraded) {
+      console.log(`ℹ️ ${loaded.reason}\n`);
+    } else {
+      const outcome = await reviewFindings(findings, loaded.provider);
+      findings = outcome.findings;
+      review = {
+        provider: loaded.provider.name,
+        confirmed: outcome.findings.length,
+        filtered: outcome.filtered,
+        downgraded: outcome.downgraded
+      };
+    }
+  }
+  return { findings, scannedFiles: scannable.length, addedLines, review };
+}
+
 const program = new Command();
 
 program
@@ -86,86 +152,100 @@ program
 
 program
   .command('scan')
-  .description('扫描代码变更中的安全问题（规则初筛；LLM 复核 Week 2 接入）')
+  .description('扫描代码变更中的安全问题（规则初筛；LLM 复核可选）')
   .option('--git', '扫描当前仓库的未提交变更')
   .option('--diff <file>', '从 unified diff 文件扫描')
   .option('--ai', '启用 LLM 复核（无 API Key 时自动降级为纯规则模式）')
   .option('--fail-on <severity>', '门禁等级：high | medium | low | info（覆盖配置文件）')
   .action(async (options: { git?: boolean; diff?: string; ai?: boolean; failOn?: string }) => {
-    if (!options.git && !options.diff) {
-      console.error(USAGE_HINT);
-      process.exitCode = 2;
-      return;
-    }
-    if (options.git && options.diff) {
-      console.error('两种扫描来源互斥，只能二选一');
-      process.exitCode = 2;
-      return;
-    }
-    const config = loadConfig();
-    let failOn: Severity = config.failOn;
-    if (options.failOn) {
-      if (!(SEVERITIES as readonly string[]).includes(options.failOn)) {
-        console.error(`--fail-on 取值无效：${options.failOn}（可选 ${SEVERITIES.join(' | ')}）`);
+    try {
+      if (!options.git && !options.diff) throw new UsageError(USAGE_HINT);
+      if (options.git && options.diff) throw new UsageError('两种扫描来源互斥，只能二选一');
+      const config = loadConfig();
+      const failOn = resolveFailOn(config, options.failOn);
+
+      const cwd = process.cwd();
+      let diff: ParsedDiff;
+      let source: string;
+      try {
+        if (options.diff) {
+          diff = parseDiff(readFileSync(options.diff, 'utf8'));
+          source = `diff 文件 ${options.diff}`;
+        } else {
+          diff = await collectGitChanges(cwd);
+          source = 'git 未提交变更';
+        }
+      } catch (err) {
+        throw new UsageError(`获取扫描来源失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      const outcome = await scanAndReview(diff, config, Boolean(options.ai), Boolean(options.ai));
+      console.log(
+        renderReport(outcome.findings, {
+          source,
+          scannedFiles: outcome.scannedFiles,
+          addedLines: outcome.addedLines,
+          review: outcome.review
+        })
+      );
+      process.exitCode = shouldFail(outcome.findings, failOn) ? 1 : 0;
+    } catch (err) {
+      if (err instanceof UsageError) {
+        console.error(err.message);
         process.exitCode = 2;
         return;
       }
-      failOn = options.failOn as Severity;
+      throw err;
     }
-    const cwd = process.cwd();
-    let diff: ParsedDiff;
-    let source: string;
+  });
+
+program
+  .command('pr-comment')
+  .description('扫描 GitHub PR 并发布/更新粘性评论（供 Action 调用）')
+  .option('--pr <number>', 'PR 编号（缺省从 GITHUB_PR_NUMBER / GITHUB_REF 推断）')
+  .option('--repo <slug>', '仓库 owner/name（缺省 GITHUB_REPOSITORY）')
+  .option('--fail-on <severity>', '门禁等级：high | medium | low | info（覆盖配置文件）')
+  .option('--ai', '启用 LLM 复核（无 API Key 时自动降级为纯规则模式）')
+  .option('--annotations', '输出 Actions 告警标注（::error/::warning）')
+  .option('--summary', '把 Markdown 报告写入暂存文件，供 Action 步骤追加到 Job Summary')
+  .action(async (options: { pr?: string; repo?: string; failOn?: string; ai?: boolean; annotations?: boolean; summary?: boolean }) => {
     try {
-      if (options.diff) {
-        diff = parseDiff(readFileSync(options.diff, 'utf8'));
-        source = `diff 文件 ${options.diff}`;
-      } else {
-        diff = await collectGitChanges(cwd);
-        source = 'git 未提交变更';
+      const token = process.env.GITHUB_TOKEN;
+      if (!token) throw new UsageError('缺少 GITHUB_TOKEN 环境变量');
+      const repo = options.repo ?? process.env.GITHUB_REPOSITORY;
+      const prNumber = resolvePrNumber(options.pr);
+      if (!repo) throw new UsageError('无法确定仓库：用 --repo owner/name 或设置 GITHUB_REPOSITORY');
+      if (!prNumber) throw new UsageError('无法确定 PR 编号：用 --pr <n> 或在 pull_request 事件中运行');
+      const config = loadConfig();
+      const failOn = resolveFailOn(config, options.failOn);
+
+      const ctx = { token, repo };
+      let diffText: string;
+      try {
+        diffText = await fetchPrDiff(ctx, prNumber);
+      } catch (err) {
+        throw new UsageError(`读取 PR #${prNumber} diff 失败：${err instanceof Error ? err.message : String(err)}`);
       }
+      const outcome = await scanAndReview(parseDiff(diffText), config, Boolean(options.ai), Boolean(options.ai));
+      const markdown = renderMarkdownReport(outcome.findings, {
+        source: `PR #${prNumber}（${repo}）`,
+        scannedFiles: outcome.scannedFiles,
+        addedLines: outcome.addedLines,
+        review: outcome.review
+      });
+      const result = await upsertStickyComment(ctx, prNumber, markdown);
+      console.log(`✅ 已${result === 'created' ? '创建' : '更新'} PR #${prNumber} 的粘性评论`);
+      if (options.annotations) for (const line of toAnnotations(outcome.findings)) console.log(line);
+      if (options.summary) console.log(`📄 Job Summary 内容已写入 ${writeSummaryFile(markdown)}`);
+      process.exitCode = shouldFail(outcome.findings, failOn) ? 1 : 0;
     } catch (err) {
-      console.error(`获取扫描来源失败：${err instanceof Error ? err.message : String(err)}`);
-      process.exitCode = 2;
-      return;
-    }
-
-    let findings = scanDiff(diff, { ignore: config.ignore });
-    const scannable = diff.files.filter((f) => !f.isBinary && !matchGlob(f.path, config.ignore));
-    const addedLines = scannable.reduce(
-      (sum, f) => sum + f.hunks.reduce((n, h) => n + h.lines.filter((l) => l.type === 'add').length, 0),
-      0
-    );
-
-    // LLM 复核：--ai 或配置启用；无 Key 等条件不满足时自动降级为纯规则模式
-    let review: ReportMeta['review'];
-    if (options.ai || config.ai.enabled) {
-      const effective = options.ai
-        ? {
-            ...config,
-            ai: {
-              ...config.ai,
-              enabled: true,
-              provider: config.ai.provider === 'off' ? ('openai-compatible' as const) : config.ai.provider
-            }
-          }
-        : config;
-      const loaded = loadProvider(effective);
-      if (loaded.degraded) {
-        console.log(`ℹ️ ${loaded.reason}\n`);
-      } else {
-        const outcome = await reviewFindings(findings, loaded.provider);
-        findings = outcome.findings;
-        review = {
-          provider: loaded.provider.name,
-          confirmed: outcome.findings.length,
-          filtered: outcome.filtered,
-          downgraded: outcome.downgraded
-        };
+      if (err instanceof UsageError) {
+        console.error(err.message);
+        process.exitCode = 2;
+        return;
       }
+      throw err;
     }
-
-    console.log(renderReport(findings, { source, scannedFiles: scannable.length, addedLines, review }));
-    process.exitCode = shouldFail(findings, failOn) ? 1 : 0;
   });
 
 program.parseAsync();

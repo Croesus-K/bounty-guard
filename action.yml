@@ -1,0 +1,53 @@
+name: 'bounty-guard'
+description: 'AI 代码安全审查助手 —— 规则引擎初筛 + LLM 复核，守住每一行 diff'
+branding:
+  icon: 'shield'
+  color: 'green'
+
+inputs:
+  github-token:
+    description: '用于读取 PR diff 与发布/更新粘性评论（默认工作流的 GITHUB_TOKEN）'
+    required: false
+    default: ${{ github.token }}
+  fail-on:
+    description: '门禁等级：high | medium | low | info'
+    required: false
+    default: 'high'
+  ai:
+    description: '启用 LLM 复核（需在调用方 job 级配置 BOUNTY_GUARD_API_KEY 环境变量）'
+    required: false
+    default: 'false'
+  pr-number:
+    description: 'PR 编号（缺省从 pull_request 事件上下文推断）'
+    required: false
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 拉取 bounty-guard 源码
+      uses: actions/checkout@v4
+      with:
+        repository: Croesus-K/bounty-guard
+        path: .bounty-guard-src
+
+    - name: 准备 Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: 构建 CLI
+      run: cd .bounty-guard-src && npm ci && npm run build
+      shell: bash
+
+    - name: 扫描 PR 并发布粘性评论
+      run: |
+        ARGS="--fail-on '${{ inputs.fail-on }}' --summary --annotations"
+        if [ '${{ inputs.ai }}' = 'true' ]; then ARGS="$ARGS --ai"; fi
+        if [ -n '${{ inputs.pr-number }}' ]; then ARGS="$ARGS --pr '${{ inputs.pr-number }}'"; fi
+        node .bounty-guard-src/dist/index.js pr-comment $ARGS
+        if [ -f .bounty-guard-summary.md ]; then
+          cat .bounty-guard-summary.md >> "${GITHUB_STEP_SUMMARY}"
+        fi
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}

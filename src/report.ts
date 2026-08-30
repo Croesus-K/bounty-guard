@@ -1,11 +1,15 @@
 /**
  * 终端报告渲染与 CI 门禁判定。
  */
+import { languageOf } from './review.js';
 import { SEVERITY_RANK } from './types.js';
 import type { Finding, Severity } from './types.js';
 
-/** 各严重度的中文标签 */
-const LABELS: Record<Severity, string> = {
+/** 粘性评论的识别标记：更新而非新建全靠它 */
+export const COMMENT_MARKER = '<!-- bounty-guard-report -->';
+
+/** 各严重度的中文标签（终端、Markdown 与告警标注共用） */
+export const LABELS: Record<Severity, string> = {
   high: '高危',
   medium: '中危',
   low: '低危',
@@ -70,5 +74,54 @@ export function renderReport(findings: Finding[], meta: ReportMeta): string {
 
   const count = (s: Severity) => findings.filter((f) => f.severity === s).length;
   out.push(`汇总：高危 ${count('high')} · 中危 ${count('medium')} · 低危 ${count('low')} · 提示 ${count('info')}`);
+  return out.join('\n');
+}
+
+const MD_ICONS: Record<Severity, string> = { high: '🔴', medium: '🟠', low: '🟡', info: '🔵' };
+
+/** Markdown 版报告：PR 粘性评论与 Job Summary 共用 */
+export function renderMarkdownReport(findings: Finding[], meta: ReportMeta): string {
+  const out: string[] = [];
+  out.push('## 🛡 bounty-guard 扫描报告');
+  out.push('');
+  out.push(`来源：${meta.source} ｜ 扫描文件 ${meta.scannedFiles} 个 ｜ 新增行 ${meta.addedLines} 行`);
+  if (meta.review) {
+    out.push('');
+    out.push(
+      `**LLM 复核（${meta.review.provider}）**：确认 ${meta.review.confirmed} · 误报过滤 ${meta.review.filtered} · 严重度下调 ${meta.review.downgraded}`
+    );
+  }
+  out.push('');
+  if (findings.length === 0) {
+    out.push('✅ **未发现安全问题**');
+  } else {
+    const count = (s: Severity) => findings.filter((f) => f.severity === s).length;
+    out.push(
+      `发现 **${findings.length}** 个问题：${LABELS.high} ${count('high')} · ${LABELS.medium} ${count('medium')} · ${LABELS.low} ${count('low')} · ${LABELS.info} ${count('info')}`
+    );
+    out.push('');
+    for (const f of findings) {
+      out.push(`### ${MD_ICONS[f.severity]} \`${f.file}:${f.line}\` — ${LABELS[f.severity]} · \`${f.ruleId}\``);
+      out.push('');
+      // 代码块围栏升级：片段本身含三反引号时用四反引号包裹
+      const fence = f.snippet.includes('```') ? '````' : '```';
+      const lang = languageOf(f.file);
+      out.push(fence + (lang === 'unknown' ? '' : lang));
+      out.push(f.snippet);
+      out.push(fence);
+      out.push('');
+      out.push(`- ⚠️ ${f.message}`);
+      if (f.review?.fixSuggestion) out.push(`- 💡 复核建议：${f.review.fixSuggestion}`);
+      else if (f.fixHint) out.push(`- 💡 ${f.fixHint}`);
+      if (f.review?.verdict === 'unsure') out.push('- ❓ LLM 未能确证，保留原判');
+      out.push('');
+    }
+  }
+  out.push('---');
+  out.push(
+    `<sub>🤖 由 <a href="https://github.com/Croesus-K/bounty-guard">bounty-guard</a> 自动生成 · 规则初筛${meta.review ? ' + LLM 复核' : ''} · 粘性评论，重复扫描只更新本条</sub>`
+  );
+  out.push('');
+  out.push(COMMENT_MARKER);
   return out.join('\n');
 }
