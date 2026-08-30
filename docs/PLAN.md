@@ -186,6 +186,37 @@ GitHub Action（薄壳）──┘
 **验收**：142 项测试全绿（新增 9 项）。多语言策略：管线语言无关，规则按扩展名守卫；
 后续语言（Go/Java）与 Python 深水区（pickle 反序列化、subprocess shell=True）按此模式扩展。
 
+## v0.2 路线图存档（2026-08-31 规划）
+
+> 战略判断：技术打磨已超出 v0.1 预期，**当前最大杠杆是发布与反馈**——
+> 本地图存档备查，v0.2 优先级等真实用户反馈落地后确定。
+
+### ① 形态拓展
+
+- [ ] MCP Server 形态：任何 AI 编程助手可在写入瞬间调用扫描（闭环 Mimosa 起点）
+- [ ] GitHub App 形态：替代 composite action，检查更快、支持私有仓库
+- [ ] IDE 诊断（VS Code 扩展，Diagnostics API）
+
+### ② 产品纵深
+
+- [ ] 基线（baseline）模式：历史问题登记造册、只拦新增——大仓库接入的关键
+- [ ] 轻量污点追踪（ts-morph）：source → sink 跨语句流向分析
+- [ ] Python 深水区：pickle 反序列化、subprocess shell=True
+- [ ] Go / Java 子集（按 v0.1.6 模式复制）
+
+### ③ 生态与增长
+
+- [ ] npm 发布 → Marketplace 上架 Action
+- [ ] GitLab CI 模板（Code Quality 格式）
+- [ ] 规则贡献指南（RULES.md）+ 每条规则标注实测误报率
+- [ ] 零遥测声明写入 README
+- [ ] 主动出击：为中小开源项目免费体检，攒案例、曝光与感谢信
+
+### ④ 叙事
+
+- [ ] 素材库颗粒化：五连拦案例拆系列短内容，预热掘金长文
+- [ ] 对比评测：vs Semgrep / CodeQL 同批 PR 横评
+
 ## v0.1.3：表达力批次（2026-08-31）
 
 - [x] 行内豁免注释：命中行含 `// bounty-guard-ignore` 即跳过
