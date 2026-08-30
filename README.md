@@ -97,6 +97,7 @@ Action 会：读取 PR diff → 规则初筛 →（可选）LLM 复核 → 发�
 | `ignore` | `node_modules` / `dist` / `coverage` | **整体替换**默认值——自定义时建议把默认三项一并写上 |
 | `failOn` | `high` | 门禁等级 high / medium / low / info，非法值在启动时报错（不静默放行） |
 | `scanTests` | `false` | 是否扫描测试文件（tests/、\_\_tests\_\_/、\*.test.\*、\*.spec.\*） |
+| `disabledRules` | `[]` | 按 id 关闭单条规则，如 `["plain-http"]` |
 | `ai.enabled` | `false` | 启用 LLM 复核（也可用 `--ai` 临时开启） |
 | `ai.provider` | `off` | `openai-compatible` / `mock` / `off`，非法值在启动时报错 |
 | `ai.baseUrl` / `ai.model` | OpenAI 官方 / `gpt-4o-mini` | DeepSeek、GLM 等换 baseUrl 即可切换 |
@@ -104,30 +105,31 @@ Action 会：读取 PR diff → 规则初筛 →（可选）LLM 复核 → 发�
 
 环境变量：`BOUNTY_GUARD_API_KEY`（或 `OPENAI_API_KEY`）、`BOUNTY_GUARD_BASE_URL`（或 `OPENAI_BASE_URL`）、`BOUNTY_GUARD_MODEL`。
 
-## 内置规则（9 条）
+## 内置规则（10 条）
 
 | 规则 | 严重度 | 说明 |
 |---|---|---|
-| `xss-inner-html` | 高危 | innerHTML 拼接不可信输入 |
+| `xss-inner-html` | 高危 | innerHTML 拼接不可信输入（支持跨行赋值拼接） |
 | `xss-react-html` | 高危 | React dangerouslySetInnerHTML 注入动态内容（sanitize 豁免） |
+| `xss-html-sink` | 高危 | document.write / jQuery .html() 写入动态内容 |
 | `weak-random-crypto` | 中危 | 加密/凭证场景使用 Math.random |
 | `hardcoded-secret` | 高危 | 硬编码密钥 / API Key（豁免环境变量与占位符） |
 | `dangerous-eval` | 高危 | 动态代码执行 |
 | `weak-hash-password` | 高危 | MD5/SHA1 用于密码（上下文感知） |
 | `sql-concat` | 高危 | SQL 字符串拼接 |
-| `cmd-exec-concat` | 高危 | shell 命令拼接（规避正则同名方法误报） |
+| `cmd-exec-concat` | 高危 | shell 命令拼接、spawn 交 shell 的动态 -c 参数 |
 | `plain-http` | 低危 | 对外明文 http 请求（豁免 localhost） |
 
-规则设计原则：**宁可漏报不可误报**，每条规则都配正反用例（116 项测试全绿）。
+规则设计原则：**宁可漏报不可误报**，每条规则都配正反用例（122 项测试全绿）。
 
-误报豁免两级开关：单行在行尾加 `// bounty-guard-ignore` 注释即可跳过；测试文件（tests/、`*.test.*`、`*.spec.*`）默认整体跳过，`scanTests: true` 可开启。
+误报豁免两级开关：单行在行尾加 `// bounty-guard-ignore` 注释即可跳过；测试文件（tests/、`*.test.*`、`*.spec.*`）默认整体跳过，`scanTests: true` 可开启；单条规则可用 `disabledRules` 按 id 关闭。
 
 ## 开发
 
 ```bash
 npm ci
 npm run dev -- scan --git   # 本地跑 CLI
-npm test                     # 116 项测试
+npm test                     # 122 项测试
 npm run lint                 # tsc --noEmit
 ```
 

@@ -12,6 +12,21 @@ import type { Finding } from './types.js';
 /** 行内豁免标记：命中行包含该注释时跳过（供“就这一行是样例”的场景） */
 export const IGNORE_MARK = 'bounty-guard-ignore';
 
+/** 行尾以赋值运算符收尾 → 语句跨行，拼接后续行后再交给规则 */
+const CONTINUATION = /[=+]\s*$/;
+
+/** 把命中行与其后至多 3 行拼成完整语句（跳过 del 行；遇到语句收尾符或空行即停） */
+function stitchFollowing(lines: DiffLine[], start: number): string {
+  const parts = [lines[start].content];
+  for (let i = start + 1; i < Math.min(lines.length, start + 4); i++) {
+    const content = lines[i].content;
+    if (lines[i].type === 'del') continue;
+    parts.push(content);
+    if (/[;})]\s*$/.test(content) || content.trim() === '') break;
+  }
+  return parts.join(' ').replace(/\s+/g, ' ');
+}
+
 export interface ScanOptions {
   /** 跳过扫描的文件 glob 列表（来自 .bountyrc.json 的 ignore） */
   ignore: string[];
@@ -19,6 +34,8 @@ export interface ScanOptions {
   rules?: Rule[];
   /** 是否包含测试文件；缺省跳过——测试样例是已知的误报源（宁可漏报不可误报） */
   skipTests?: boolean;
+  /** 禁用的规则 id 列表（来自 .bountyrc.json 的 disabledRules） */
+  disabledRules?: string[];
 }
 
 /** 测试文件识别：tests/、__tests__/、spec/ 目录与 *.test.* / *.spec.* 后缀 */
@@ -42,7 +59,8 @@ function contextWindow(lines: DiffLine[], hit: number): string[] {
 /** 扫描整个 diff，返回全部告警（按文件、行遍历顺序） */
 export function scanDiff(diff: ParsedDiff, options: ScanOptions): Finding[] {
   const findings: Finding[] = [];
-  const rules = options.rules ?? ALL_RULES;
+  const disabled = new Set(options.disabledRules ?? []);
+  const rules = (options.rules ?? ALL_RULES).filter((rule) => !disabled.has(rule.id));
 
   for (const file of diff.files) {
     if (file.isBinary) continue;
@@ -53,10 +71,13 @@ export function scanDiff(diff: ParsedDiff, options: ScanOptions): Finding[] {
         const line = hunk.lines[i];
         if (line.type !== 'add' || line.newLine === undefined) continue;
         if (line.content.includes(IGNORE_MARK)) continue; // 行内豁免
+        const content = CONTINUATION.test(line.content)
+          ? stitchFollowing(hunk.lines, i)
+          : line.content;
         const ctx: RuleContext = {
           file: file.path,
           line: line.newLine,
-          content: line.content,
+          content,
           context: contextWindow(hunk.lines, i)
         };
         for (const rule of rules) {

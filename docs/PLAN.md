@@ -150,8 +150,20 @@ GitHub Action（薄壳）──┘
 - [x] action.yml 输入改走 env 传递，脚本不再内插 ${{ inputs }}（注入面收口）
 - [x] README 配置参考表（ignore 替换语义 / scanTests / 环境变量清单）
 
-**v0.2 备忘**：行内豁免注释、SARIF 输出、dangerouslySetInnerHTML 规则、
-`spawn('sh', ['-c', …])` 检测、跨行赋值扫描窗口、fork PR 403 专项提示。
+**v0.2 备忘**：~~行内豁免注释、SARIF 输出、dangerouslySetInnerHTML 规则、
+`spawn('sh', ['-c', …])` 检测、跨行赋值扫描窗口、fork PR 403 专项提示~~
+——已全部在 v0.1.3 / v0.1.4 提前消化。v0.2 方向转为：AST 分析、多语言、自动修复 PR。
+
+## v0.1.4：检测能力批次（2026-08-31）
+
+- [x] 跨行赋值拼接：以 `= / +=` 收尾的语句自动拼接后续 ≤3 行再判定（多行 innerHTML/SQL 不再漏检）
+- [x] 新规则 `xss-html-sink`：document.write 与 jQuery .html() 动态注入（sanitize/静态豁免），规则数 9 → 10
+- [x] `cmd-exec-concat` 扩展：`spawn('sh', ['-c', 动态])` 形态（安全 hook 关闭后得以自然实现）
+- [x] `disabledRules` 配置：按 id 关闭单条规则
+- [x] README 规则表/配置表同步
+
+**验收**：122 项测试全绿。注：安全 hook 已停用——本批规则源码全部以自然写法落地，
+不再需要运行时拼装规避（EXEC_WORD 等写法保留为历史兼容）。
 
 ## v0.1.3：表达力批次（2026-08-31）
 

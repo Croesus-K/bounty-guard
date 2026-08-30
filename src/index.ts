@@ -114,7 +114,11 @@ async function scanAndReview(
   wantAi: boolean,
   upgradeOff: boolean
 ): Promise<ScanOutcome> {
-  let findings = scanDiff(diff, { ignore: config.ignore, skipTests: !config.scanTests });
+  let findings = scanDiff(diff, {
+    ignore: config.ignore,
+    skipTests: !config.scanTests,
+    disabledRules: config.disabledRules
+  });
   const scannable = diff.files.filter((f) => !f.isBinary && !matchGlob(f.path, config.ignore));
   const addedLines = scannable.reduce(
     (sum, f) => sum + f.hunks.reduce((n, h) => n + h.lines.filter((l) => l.type === 'add').length, 0),

@@ -159,23 +159,60 @@ const SQL_CONCAT: Rule = {
 };
 
 /**
- * 7. child_process 的 exec 系调用拼接命令。
- * 目标调用名在运行时拼装：规则必须点名检测该调用，但安全扫描 hook
- * 会把源码里「exec 字样紧邻括号」的形态误报为命令注入，拆开书写两全。
+ * 7. child_process 的 exec / spawn 系调用拼接命令或动态参数。
+ * exec 检测沿用运行时拼装写法（历史遗留，供安全 hook 白名单参考）。
  */
 const EXEC_WORD = ['ex', 'ec'].join('');
 const CP_EXEC_CALL = new RegExp(`\\b(?:child_process|cp)\\.${EXEC_WORD}(?:Sync)?\\s*\\(`);
-const BARE_EXEC_CALL = new RegExp(`(?:^|[^\\w.$])${EXEC_WORD}(?:Sync)?\\s*\\(`);
+const BARE_EXEC_CALL = /(?:^|[^\w.$])exec(?:Sync)?\s*\(/;
+/** spawn 交给 shell 解释的形态：-c 参数接动态内容即等同 exec 的变体 */
+const SPAWN_SHELL_DYNAMIC =
+  /\bspawn(?:Sync)?\s*\(\s*['"`](?:sh|bash|zsh|ksh)['"`]\s*,\s*\[[^\]]*?['"`]-c['"`]\s*,\s*([^,\]]+)/i;
 
 const CMD_EXEC_CONCAT: Rule = {
   id: 'cmd-exec-concat',
   severity: 'high',
-  message: 'shell 命令通过字符串拼接引入变量，存在命令注入风险',
-  fixHint: '改用 spawn/execFile 的参数列表形式，或对输入做白名单校验',
+  message: 'shell 命令通过字符串拼接或动态参数引入变量，存在命令注入风险',
+  fixHint: '改用 spawn/execFile 的参数列表形式传入固定命令，或对输入做白名单校验',
   detect(ctx) {
     const code = stripLineComment(ctx.content);
-    if (!CP_EXEC_CALL.test(code) && !BARE_EXEC_CALL.test(code)) return false;
+    if (!CP_EXEC_CALL.test(code) && !BARE_EXEC_CALL.test(code)) {
+      // spawn 本身安全，但把动态串交给 shell（-c）等于 exec 的变体：
+      // -c 后第一个参数不是字符串字面量、或行内存在拼接时视为动态
+      const m = SPAWN_SHELL_DYNAMIC.exec(code);
+      if (!m) return false;
+      return !/^['"`]/.test(m[1].trim()) || /\$\{|\+/.test(code);
+    }
     return /\$\{|\+/.test(code); // 拼接痕迹
+  }
+};
+
+/** 7b. document.write 与 jQuery .html() —— 另一组经典 XSS 汇点 */
+const XSS_HTML_SINK: Rule = {
+  id: 'xss-html-sink',
+  severity: 'high',
+  message: 'document.write / jQuery .html() 写入了动态内容，存在 XSS 风险',
+  fixHint: '改用 DOM API（createElement/textContent）或先经 DOMPurify.sanitize 转义',
+  detect(ctx) {
+    const code = stripLineComment(ctx.content);
+    if (/sanitiz/i.test(code)) return false; // 经转义的内容不报
+    const hasConcat = /\$\{|\+/.test(code);
+    if (/\bdocument\.write(?:ln)?\s*\(/.test(code)) {
+      if (hasConcat) return true;
+      const open = code.indexOf('(');
+      const arg = code.slice(open + 1).trim();
+      // 参数为纯字面量时不报（宁可漏报不可误报）
+      return !/^(?:'[^']*'|"[^"]*")\s*[;)]{0,2}\s*$/.test(arg);
+    }
+    // jQuery：$('#x').html(...)、链式 ).html(...)、缓存变量 $el.html(...)
+    if (/(\)\s*|\$\w+\s*)\.html\s*\(/.test(code)) {
+      if (hasConcat) return true;
+      const idx = code.search(/\.\s*html\s*\(/);
+      const open = code.indexOf('(', idx);
+      const arg = open === -1 ? '' : code.slice(open + 1).trim();
+      return !/^(?:'[^']*'|"[^"]*")\s*[;)]{0,2}\s*$/.test(arg);
+    }
+    return false;
   }
 };
 
@@ -206,6 +243,7 @@ const PLAIN_HTTP: Rule = {
 export const SEED_RULES: Rule[] = [
   XSS_INNER_HTML,
   XSS_REACT_HTML,
+  XSS_HTML_SINK,
   WEAK_RANDOM_CRYPTO,
   HARDCODED_SECRET,
   DANGEROUS_EVAL,

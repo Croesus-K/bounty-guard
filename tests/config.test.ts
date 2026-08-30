@@ -21,6 +21,7 @@ describe('loadConfig', () => {
     expect(config.ai.enabled).toBe(false);
     expect(config.ignore.length).toBeGreaterThan(0);
     expect(config.scanTests).toBe(false);
+    expect(config.disabledRules).toEqual([]);
   });
 
   it('读取 .bountyrc.json 并与默认值合并（深合并 ai 段）', () => {

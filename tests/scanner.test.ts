@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DiffLine, ParsedDiff } from '../src/diff.js';
 import { scanDiff } from '../src/scanner.js';
+import { SEED_RULES } from '../src/rules/seeds.js';
 import type { Rule } from '../src/rules/model.js';
 
 /** 构造单文件单 hunk 的测试 diff；条目为 [类型, 内容] */
@@ -142,5 +143,25 @@ describe('scanDiff', () => {
   it('非测试路径不受跳过逻辑影响', () => {
     const diff = singleFileDiff([['add', 'badCall();']], 'src/latest.ts');
     expect(scanDiff(diff, { ignore: [], rules: [ruleBad] })).toHaveLength(1);
+  });
+
+  it('跨行赋值自动拼接后仍可命中（真实规则）', () => {
+    const xss = SEED_RULES.find((r) => r.id === 'xss-inner-html')!;
+    const dynamic = singleFileDiff([
+      ['add', 'el.innerHTML ='],
+      ['add', "  '<b>' + userName;"]
+    ]);
+    expect(scanDiff(dynamic, { ignore: [], rules: [xss] })).toHaveLength(1);
+    const statik = singleFileDiff([
+      ['add', 'el.innerHTML ='],
+      ['add', "  '<b>静态</b>';"]
+    ]);
+    expect(scanDiff(statik, { ignore: [], rules: [xss] })).toHaveLength(0);
+  });
+
+  it('disabledRules 可关闭单条规则', () => {
+    const diff = singleFileDiff([['add', 'badCall();']]);
+    expect(scanDiff(diff, { ignore: [], rules: [ruleBad], disabledRules: ['stub-bad'] })).toHaveLength(0);
+    expect(scanDiff(diff, { ignore: [], rules: [ruleBad], disabledRules: ['other'] })).toHaveLength(1);
   });
 });

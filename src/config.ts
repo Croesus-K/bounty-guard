@@ -21,6 +21,8 @@ export interface BountyConfig {
   failOn: Severity;
   /** 是否把测试文件也纳入扫描（默认跳过——测试样例是已知误报源） */
   scanTests?: boolean;
+  /** 禁用的规则 id 列表（如关闭 plain-http） */
+  disabledRules?: string[];
   ai: AiConfig;
 }
 
@@ -28,6 +30,7 @@ export const DEFAULT_CONFIG: BountyConfig = {
   ignore: ['node_modules/**', 'dist/**', 'coverage/**'],
   failOn: 'high',
   scanTests: false,
+  disabledRules: [],
   ai: { enabled: false, provider: 'off' }
 };
 

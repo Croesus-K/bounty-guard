@@ -29,9 +29,9 @@ const hits = (id: string, content: string, context: string[] = []) =>
   ruleById(id).detect(ctx(content, context));
 
 describe('规则注册表', () => {
-  it('包含 9 条种子规则且 id 唯一', () => {
-    expect(SEED_RULES).toHaveLength(9);
-    expect(new Set(SEED_RULES.map((r) => r.id)).size).toBe(9);
+  it('包含 10 条种子规则且 id 唯一', () => {
+    expect(SEED_RULES).toHaveLength(10);
+    expect(new Set(SEED_RULES.map((r) => r.id)).size).toBe(10);
   });
 
   it('每条规则都带中文 message 与 fixHint', () => {
@@ -153,6 +153,32 @@ describe('cmd-exec-concat', () => {
     expect(hits('cmd-exec-concat', `/ab+c/.${EX}(input);`)).toBe(false);
     expect(hits('cmd-exec-concat', `cp.${EX}("ls -la");`)).toBe(false);
     expect(hits('cmd-exec-concat', 'child_process.spawn("ls", [args]);')).toBe(false);
+  });
+
+  it('spawn 交给 shell 的 -c 动态参数命中', () => {
+    expect(hits('cmd-exec-concat', "cp.spawn('sh', ['-c', 'ls ' + dir]);")).toBe(true);
+    expect(hits('cmd-exec-concat', "spawn('bash', ['-c', script]);")).toBe(true);
+    expect(hits('cmd-exec-concat', 'child_process.spawnSync("bash", ["-c", cmd]);')).toBe(true);
+  });
+
+  it('spawn 静态命令不命中', () => {
+    expect(hits('cmd-exec-concat', "spawn('sh', ['-c', 'ls -la']);")).toBe(false);
+  });
+});
+
+describe('xss-html-sink', () => {
+  it('document.write / jQuery .html() 写入动态内容时命中', () => {
+    expect(hits('xss-html-sink', "document.write('<b>' + name + '</b>');")).toBe(true);
+    expect(hits('xss-html-sink', 'document.write(template(data));')).toBe(true);
+    expect(hits('xss-html-sink', '$(\'#list\').html(`<li>${user.item}</li>`);')).toBe(true);
+    expect(hits('xss-html-sink', '$el.html(renderItem(task));')).toBe(true);
+  });
+
+  it('静态内容、经转义、textContent 不命中', () => {
+    expect(hits('xss-html-sink', "document.write('<b>静态</b>');")).toBe(false);
+    expect(hits('xss-html-sink', "$('#list').html('静态列表');")).toBe(false);
+    expect(hits('xss-html-sink', '$el.html(DOMPurify.sanitize(raw));')).toBe(false);
+    expect(hits('xss-html-sink', 'el.textContent = raw;')).toBe(false);
   });
 });
 
