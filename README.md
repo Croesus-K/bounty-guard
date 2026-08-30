@@ -45,6 +45,9 @@ npx bounty-guard scan --git
 # 扫描 diff 文件，发现高危即非零退出（CI 门禁）
 npx bounty-guard scan --diff pr.diff --fail-on high
 
+# 输出 SARIF（可对接 GitHub code-scanning）或 JSON
+npx bounty-guard scan --diff pr.diff --format sarif
+
 # 启用 LLM 复核（无 Key 自动降级为纯规则模式）
 BOUNTY_GUARD_API_KEY=sk-xxx npx bounty-guard scan --git --ai
 ```
@@ -101,11 +104,12 @@ Action 会：读取 PR diff → 规则初筛 →（可选）LLM 复核 → 发�
 
 环境变量：`BOUNTY_GUARD_API_KEY`（或 `OPENAI_API_KEY`）、`BOUNTY_GUARD_BASE_URL`（或 `OPENAI_BASE_URL`）、`BOUNTY_GUARD_MODEL`。
 
-## 内置规则（v0.1，8 条）
+## 内置规则（9 条）
 
 | 规则 | 严重度 | 说明 |
 |---|---|---|
 | `xss-inner-html` | 高危 | innerHTML 拼接不可信输入 |
+| `xss-react-html` | 高危 | React dangerouslySetInnerHTML 注入动态内容（sanitize 豁免） |
 | `weak-random-crypto` | 中危 | 加密/凭证场景使用 Math.random |
 | `hardcoded-secret` | 高危 | 硬编码密钥 / API Key（豁免环境变量与占位符） |
 | `dangerous-eval` | 高危 | 动态代码执行 |
@@ -114,14 +118,16 @@ Action 会：读取 PR diff → 规则初筛 →（可选）LLM 复核 → 发�
 | `cmd-exec-concat` | 高危 | shell 命令拼接（规避正则同名方法误报） |
 | `plain-http` | 低危 | 对外明文 http 请求（豁免 localhost） |
 
-规则设计原则：**宁可漏报不可误报**，每条规则都配正反用例（93 项测试全绿）。
+规则设计原则：**宁可漏报不可误报**，每条规则都配正反用例（116 项测试全绿）。
+
+误报豁免两级开关：单行在行尾加 `// bounty-guard-ignore` 注释即可跳过；测试文件（tests/、`*.test.*`、`*.spec.*`）默认整体跳过，`scanTests: true` 可开启。
 
 ## 开发
 
 ```bash
 npm ci
 npm run dev -- scan --git   # 本地跑 CLI
-npm test                     # 93 项测试
+npm test                     # 116 项测试
 npm run lint                 # tsc --noEmit
 ```
 

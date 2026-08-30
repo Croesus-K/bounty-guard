@@ -48,6 +48,27 @@ const XSS_INNER_HTML: Rule = {
 const CRYPTO_WORDS =
   /(token|secret|api[_-]?key|nonce|salt|otp|password|passwd|session|jwt|encrypt|decrypt|verify|签名|密钥|口令|凭证)/i;
 
+/** 1b. React dangerouslySetInnerHTML —— 绕过转义的后门 */
+const XSS_REACT_HTML: Rule = {
+  id: 'xss-react-html',
+  severity: 'high',
+  message: 'dangerouslySetInnerHTML 注入了动态内容，等效于放弃 React 的转义保护',
+  fixHint: '优先用普通 children 渲染；确需富文本时先经 DOMPurify.sanitize 等白名单转义',
+  detect(ctx) {
+    const code = stripLineComment(ctx.content);
+    const at = code.indexOf('__html');
+    if (at === -1) return false; // 未出现 React 的 html 属性
+    const value = code.slice(at + '__html'.length).replace(/^[:=\s]+/, '');
+    if (value === '') return false; // 跨行属性：保守不报
+    // 推荐姿势（经 sanitize）与纯静态字符串不报
+    if (/sanitiz/i.test(value)) return false;
+    const trimmed = value.replace(/[;,}\s]+$/, '');
+    const staticLiteral = /^(?:'[^']*'|"[^"]*"|`[^`]*`)$/.test(trimmed);
+    if (staticLiteral && !trimmed.includes('${')) return false;
+    return true;
+  }
+};
+
 /** 2. 加密场景使用 Math.random */
 const WEAK_RANDOM_CRYPTO: Rule = {
   id: 'weak-random-crypto',
@@ -184,6 +205,7 @@ const PLAIN_HTTP: Rule = {
 
 export const SEED_RULES: Rule[] = [
   XSS_INNER_HTML,
+  XSS_REACT_HTML,
   WEAK_RANDOM_CRYPTO,
   HARDCODED_SECRET,
   DANGEROUS_EVAL,

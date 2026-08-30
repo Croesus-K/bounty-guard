@@ -127,3 +127,58 @@ export function renderMarkdownReport(findings: Finding[], meta: ReportMeta): str
   out.push(COMMENT_MARKER);
   return out.join('\n');
 }
+
+/** SARIF 级别映射：high → error，medium → warning，low/info → note */
+function sarifLevel(severity: Severity): 'error' | 'warning' | 'note' {
+  return severity === 'high' ? 'error' : severity === 'medium' ? 'warning' : 'note';
+}
+
+/** SARIF 2.1.0 输出：可直接对接 GitHub code-scanning（actions/upload-sarif） */
+export function renderSarif(
+  findings: Finding[],
+  meta: Pick<ReportMeta, 'source' | 'scannedFiles' | 'addedLines'>
+): Record<string, unknown> {
+  const rules = new Map<
+    string,
+    { id: string; shortDescription: { text: string }; defaultConfiguration: { level: string } }
+  >();
+  const results = findings.map((f) => {
+    if (!rules.has(f.ruleId)) {
+      rules.set(f.ruleId, {
+        id: f.ruleId,
+        shortDescription: { text: f.message },
+        defaultConfiguration: { level: sarifLevel(f.severity) }
+      });
+    }
+    return {
+      ruleId: f.ruleId,
+      level: sarifLevel(f.severity),
+      message: { text: f.review?.fixSuggestion ? `${f.message}。${f.review.fixSuggestion}` : f.message },
+      locations: [
+        {
+          physicalLocation: {
+            artifactLocation: { uri: f.file.replace(/\\/g, '/') },
+            region: { startLine: f.line }
+          }
+        }
+      ]
+    };
+  });
+  return {
+    $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
+    version: '2.1.0',
+    runs: [
+      {
+        tool: {
+          driver: {
+            name: 'bounty-guard',
+            informationUri: 'https://github.com/Croesus-K/bounty-guard',
+            rules: [...rules.values()]
+          }
+        },
+        results,
+        properties: { source: meta.source, scannedFiles: meta.scannedFiles, addedLines: meta.addedLines }
+      }
+    ]
+  };
+}

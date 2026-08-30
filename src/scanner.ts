@@ -9,6 +9,9 @@ import { ALL_RULES } from './rules/index.js';
 import type { Rule, RuleContext } from './rules/model.js';
 import type { Finding } from './types.js';
 
+/** 行内豁免标记：命中行包含该注释时跳过（供“就这一行是样例”的场景） */
+export const IGNORE_MARK = 'bounty-guard-ignore';
+
 export interface ScanOptions {
   /** 跳过扫描的文件 glob 列表（来自 .bountyrc.json 的 ignore） */
   ignore: string[];
@@ -49,6 +52,7 @@ export function scanDiff(diff: ParsedDiff, options: ScanOptions): Finding[] {
       for (let i = 0; i < hunk.lines.length; i++) {
         const line = hunk.lines[i];
         if (line.type !== 'add' || line.newLine === undefined) continue;
+        if (line.content.includes(IGNORE_MARK)) continue; // 行内豁免
         const ctx: RuleContext = {
           file: file.path,
           line: line.newLine,

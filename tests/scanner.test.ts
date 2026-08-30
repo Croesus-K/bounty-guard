@@ -124,6 +124,13 @@ describe('scanDiff', () => {
     expect(scanDiff(diff, { ignore: [], rules: [ruleBad] })).toHaveLength(0);
   });
 
+  it('行内豁免注释可跳过单个新增行', () => {
+    const exempt = singleFileDiff([['add', 'badCall(); // bounty-guard-ignore']]);
+    expect(scanDiff(exempt, { ignore: [], rules: [ruleBad] })).toHaveLength(0);
+    const normal = singleFileDiff([['add', 'badCall();']]);
+    expect(scanDiff(normal, { ignore: [], rules: [ruleBad] })).toHaveLength(1);
+  });
+
   it('默认跳过测试文件，skipTests:false 可包含', () => {
     const inTestsDir = singleFileDiff([['add', 'badCall();']], 'tests/unit/a.test.ts');
     const testSuffix = singleFileDiff([['add', 'badCall();']], 'src/app.spec.ts');

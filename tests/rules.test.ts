@@ -29,9 +29,9 @@ const hits = (id: string, content: string, context: string[] = []) =>
   ruleById(id).detect(ctx(content, context));
 
 describe('规则注册表', () => {
-  it('包含 8 条种子规则且 id 唯一', () => {
-    expect(SEED_RULES).toHaveLength(8);
-    expect(new Set(SEED_RULES.map((r) => r.id)).size).toBe(8);
+  it('包含 9 条种子规则且 id 唯一', () => {
+    expect(SEED_RULES).toHaveLength(9);
+    expect(new Set(SEED_RULES.map((r) => r.id)).size).toBe(9);
   });
 
   it('每条规则都带中文 message 与 fixHint', () => {
@@ -53,6 +53,18 @@ describe('xss-inner-html', () => {
     expect(hits('xss-inner-html', "el.innerHTML = '<b>静态</b>';")).toBe(false);
     expect(hits('xss-inner-html', "el.innerHTML = '';")).toBe(false);
     expect(hits('xss-inner-html', 'el.textContent = userHtml;')).toBe(false);
+  });
+});
+
+describe('xss-react-html', () => {
+  it('动态内容注入 dangerouslySetInnerHTML 时命中', () => {
+    expect(hits('xss-react-html', 'const html = { __html: userContent };')).toBe(true);
+    expect(hits('xss-react-html', '<div dangerouslySetInnerHTML={{ __html: makeHtml(x) }} />')).toBe(true);
+  });
+
+  it('静态字符串与经 sanitize 的内容不命中', () => {
+    expect(hits('xss-react-html', "const html = { __html: '静态富文本' };")).toBe(false);
+    expect(hits('xss-react-html', '<div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(x) }} />')).toBe(false);
   });
 });
 

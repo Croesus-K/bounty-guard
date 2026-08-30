@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderMarkdownReport, renderReport, shouldFail } from '../src/report.js';
+import { renderMarkdownReport, renderReport, renderSarif, shouldFail } from '../src/report.js';
 import type { Finding, Severity } from '../src/types.js';
 
 function finding(severity: Severity, file = 'src/a.js', line = 3): Finding {
@@ -114,6 +114,37 @@ describe('renderMarkdownReport', () => {
     f.snippet = 'const s = ```; // 含围栏的行';
     const text = renderMarkdownReport([f], { source: 's', scannedFiles: 1, addedLines: 1 });
     expect(text).toContain('````');
+  });
+});
+
+describe('renderSarif', () => {
+  it('输出 SARIF 2.1.0 结构：工具、规则去重、位置与级别映射', () => {
+    const f1 = finding('high');
+    const f2 = finding('high', 'src/a.js', 9);
+    const f3 = finding('low');
+    f3.ruleId = 'r-2';
+    const sarif = renderSarif([f1, f2, f3], {
+      source: 's',
+      scannedFiles: 2,
+      addedLines: 3
+    }) as {
+      version: string;
+      runs: Array<{
+        tool: { driver: { name: string; rules: Array<{ id: string }> } };
+        results: Array<{
+          ruleId: string;
+          level: string;
+          locations: Array<{ physicalLocation: { artifactLocation: { uri: string }; region: { startLine: number } } }>;
+        }>;
+      }>;
+    };
+    expect(sarif.version).toBe('2.1.0');
+    expect(sarif.runs[0].tool.driver.name).toBe('bounty-guard');
+    expect(sarif.runs[0].tool.driver.rules.map((r) => r.id)).toEqual(['r-1', 'r-2']);
+    expect(sarif.runs[0].results).toHaveLength(3);
+    expect(sarif.runs[0].results[0].level).toBe('error');
+    expect(sarif.runs[0].results[2].level).toBe('note');
+    expect(sarif.runs[0].results[0].locations[0].physicalLocation.region.startLine).toBe(3);
   });
 });
 

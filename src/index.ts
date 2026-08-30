@@ -16,7 +16,7 @@ import {
 } from './github.js';
 import { matchGlob } from './glob.js';
 import { loadProvider } from './llm/provider.js';
-import { renderMarkdownReport, renderReport, shouldFail, type ReportMeta } from './report.js';
+import { renderMarkdownReport, renderReport, renderSarif, shouldFail, type ReportMeta } from './report.js';
 import { reviewFindings } from './review.js';
 import { scanDiff } from './scanner.js';
 import { SEVERITIES, type Finding, type Severity } from './types.js';
@@ -25,6 +25,7 @@ const require = createRequire(import.meta.url);
 const VERSION: string = require('../package.json').version;
 
 const USAGE_HINT = '请指定扫描来源：--git（扫描未提交变更）或 --diff <file>（扫描 diff 文件）';
+const FORMATS: readonly string[] = ['text', 'sarif', 'json'];
 
 /** 用法类错误：输出友好提示并以退出码 2 结束 */
 class UsageError extends Error {}
@@ -158,7 +159,8 @@ program
   .option('--diff <file>', '从 unified diff 文件扫描')
   .option('--ai', '启用 LLM 复核（无 API Key 时自动降级为纯规则模式）')
   .option('--fail-on <severity>', '门禁等级：high | medium | low | info（覆盖配置文件）')
-  .action(async (options: { git?: boolean; diff?: string; ai?: boolean; failOn?: string }) => {
+  .option('-f, --format <fmt>', '输出格式：text | sarif | json（默认 text）')
+  .action(async (options: { git?: boolean; diff?: string; ai?: boolean; failOn?: string; format?: string }) => {
     try {
       if (!options.git && !options.diff) throw new UsageError(USAGE_HINT);
       if (options.git && options.diff) throw new UsageError('两种扫描来源互斥，只能二选一');
@@ -181,14 +183,23 @@ program
       }
 
       const outcome = await scanAndReview(diff, config, Boolean(options.ai), Boolean(options.ai));
-      console.log(
-        renderReport(outcome.findings, {
-          source,
-          scannedFiles: outcome.scannedFiles,
-          addedLines: outcome.addedLines,
-          review: outcome.review
-        })
-      );
+      const format = options.format ?? 'text';
+      if (!(FORMATS as readonly string[]).includes(format)) {
+        throw new UsageError(`--format 取值无效：${format}（可选 ${FORMATS.join(' | ')}）`);
+      }
+      const meta = {
+        source,
+        scannedFiles: outcome.scannedFiles,
+        addedLines: outcome.addedLines,
+        review: outcome.review
+      };
+      if (format === 'sarif') {
+        console.log(JSON.stringify(renderSarif(outcome.findings, meta), null, 2));
+      } else if (format === 'json') {
+        console.log(JSON.stringify({ ...meta, findings: outcome.findings }, null, 2));
+      } else {
+        console.log(renderReport(outcome.findings, meta));
+      }
       process.exitCode = shouldFail(outcome.findings, failOn) ? 1 : 0;
     } catch (err) {
       if (err instanceof UsageError) {
@@ -241,7 +252,18 @@ program
         addedLines: outcome.addedLines,
         review: outcome.review
       });
-      const result = await upsertStickyComment(ctx, prNumber, markdown);
+      let result: 'created' | 'updated';
+      try {
+        result = await upsertStickyComment(ctx, prNumber, markdown);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/HTTP 403/.test(msg)) {
+          throw new UsageError(
+            `发布评论失败：${msg}。常见原因：fork PR 的默认令牌为只读（可改用 PAT），或 workflow 缺少 pull-requests: write 权限`
+          );
+        }
+        throw err;
+      }
       console.log(`✅ 已${result === 'created' ? '创建' : '更新'} PR #${prNumber} 的粘性评论`);
       if (options.annotations) for (const line of toAnnotations(outcome.findings)) console.log(line);
       if (options.summary) console.log(`📄 Job Summary 内容已写入 ${writeSummaryFile(markdown)}`);

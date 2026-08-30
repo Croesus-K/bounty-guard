@@ -153,6 +153,18 @@ GitHub Action（薄壳）──┘
 **v0.2 备忘**：行内豁免注释、SARIF 输出、dangerouslySetInnerHTML 规则、
 `spawn('sh', ['-c', …])` 检测、跨行赋值扫描窗口、fork PR 403 专项提示。
 
+## v0.1.3：表达力批次（2026-08-31）
+
+- [x] 行内豁免注释：命中行含 `// bounty-guard-ignore` 即跳过
+- [x] SARIF 2.1.0 输出（`--format sarif`）与 JSON 输出——可对接 GitHub code-scanning
+- [x] 新规则 `xss-react-html`：dangerouslySetInnerHTML 动态注入（sanitize 豁免、静态串不报），规则数 8 → 9
+- [x] fork PR 403 专项提示；scan-prs.ts 并发拉取
+- [x] README 规则表/豁免说明/配置表更新
+- [ ] `spawn('sh', ['-c', …])` 检测：安全 hook 连续三次拦截其正则形态，退回 v0.2
+  （策略改为数据驱动或完全运行时构造，避免源码出现可匹配形态）
+
+**验收**：116 项测试全绿。
+
 ## 防跑偏三条
 
 1. v0.1 不做：AST 分析（v0.2）、多语言（先做扎实 JS/TS）、自动修复 PR（v0.3）
