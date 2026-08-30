@@ -123,7 +123,7 @@ Action 会：读取 PR diff → 规则初筛 →（可选）LLM 复核 → 发�
 
 环境变量：`BOUNTY_GUARD_API_KEY`（或 `OPENAI_API_KEY`）、`BOUNTY_GUARD_BASE_URL`（或 `OPENAI_BASE_URL`）、`BOUNTY_GUARD_MODEL`。
 
-## 内置规则（10 条）
+## 内置规则（JS 10 条 + Python 4 条）
 
 | 规则 | 严重度 | 说明 |
 |---|---|---|
@@ -138,7 +138,16 @@ Action 会：读取 PR diff → 规则初筛 →（可选）LLM 复核 → 发�
 | `cmd-exec-concat` | 高危 | shell 命令拼接、spawn 交 shell 的动态 -c 参数 |
 | `plain-http` | 低危 | 对外明文 http 请求（豁免 localhost） |
 
-规则设计原则：**宁可漏报不可误报**，每条规则都配正反用例（122 项测试全绿）。
+规则设计原则：**宁可漏报不可误报**，每条规则都配正反用例（142 项测试全绿）。
+
+**Python 子集**（`.py` 文件，多语言第一步）：
+
+| 规则 | 严重度 | 说明 |
+|---|---|---|
+| `py-dangerous-eval` | 高危 | eval / exec / compile 动态执行 |
+| `py-weak-hash-password` | 高危 | MD5/SHA1 用于密码（上下文感知） |
+| `py-sql-concat` | 高危 | SQL 拼接（+ / % 元组 / .format / f-string） |
+| `py-hardcoded-secret` | 高危 | 硬编码密钥常量（豁免 os.environ 与占位符） |
 
 误报豁免两级开关：单行在行尾加 `// bounty-guard-ignore` 注释即可跳过；测试文件（tests/、`*.test.*`、`*.spec.*`）默认整体跳过，`scanTests: true` 可开启；单条规则可用 `disabledRules` 按 id 关闭。
 
