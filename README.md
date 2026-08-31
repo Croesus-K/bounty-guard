@@ -1,6 +1,7 @@
 # bounty-guard
 
 [![CI](https://github.com/Croesus-K/bounty-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/Croesus-K/bounty-guard/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/bounty-guard.svg)](https://www.npmjs.com/package/bounty-guard)
 
 > AI 代码安全审查助手 —— 规则引擎初筛 + LLM 复核，守住每一行 diff。
 
