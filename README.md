@@ -39,6 +39,10 @@ GitHub Action（薄壳）──┘
 
 ## 快速开始
 
+```bash
+npm i -g bounty-guard    # 全局安装；或免安装直接 npx
+```
+
 ### CLI 扫描
 
 ```bash
