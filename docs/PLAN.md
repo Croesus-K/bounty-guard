@@ -206,7 +206,7 @@ GitHub Action（薄壳）──┘
 
 ### ③ 生态与增长
 
-- [ ] npm 发布 → Marketplace 上架 Action
+- [x] npm 发布 → Marketplace 上架 Action（npm v0.2.0 ✅ / [marketplace/actions/bounty-guard](https://github.com/marketplace/actions/bounty-guard) ✅，分类 Code review，2026-09-04）
 - [ ] GitLab CI 模板（Code Quality 格式）
 - [ ] 规则贡献指南（RULES.md）+ 每条规则标注实测误报率
 - [ ] 零遥测声明写入 README
