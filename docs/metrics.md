@@ -1,10 +1,10 @@
 # 误报率周报
 
-> 自动生成于 2026-10-09 · 来源清单 `scripts/metrics-prs.txt` · 样本 9 个真实 PR
+> 自动生成于 2026-10-16 · 来源清单 `scripts/metrics-prs.txt` · 样本 9 个真实 PR
 
 | 指标 | 数值 |
 |---|---|
-| 新增行 | 1298 |
+| 新增行 | 1388 |
 | 命中 | 0 |
 
 | PR | 新增行 | 命中 |
@@ -13,7 +13,7 @@
 | expressjs/express#7435 | 280 | 0 |
 | expressjs/express#7434 | 85 | 0 |
 | axios/axios#11175 | 775 | 0 |
-| axios/axios#11174 | 3 | 0 |
+| axios/axios#11174 | 93 | 0 |
 | axios/axios#11173 | 20 | 0 |
 | vitejs/vite#23401 | 86 | 0 |
 | vitejs/vite#23400 | 22 | 0 |
